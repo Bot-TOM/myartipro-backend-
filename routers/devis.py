@@ -179,7 +179,7 @@ async def envoyer_devis(
     if not client or not client.get("email"):
         raise HTTPException(status_code=400, detail="Le client n'a pas d'adresse email")
 
-    plombier = (
+    artisan = (
         db.table("profiles")
         .select("nom, prenom, entreprise")
         .eq("id", current_user["id"])
@@ -187,13 +187,13 @@ async def envoyer_devis(
         .execute()
     ).data
 
-    plombier_nom = plombier.get("entreprise") or f"{plombier['prenom']} {plombier['nom']}"
+    artisan_nom = artisan.get("entreprise") or f"{artisan['prenom']} {artisan['nom']}"
 
     try:
         envoyer_devis_email(
             client_email=client["email"],
             client_nom=f"{client.get('prenom', '')} {client['nom']}".strip(),
-            plombier_nom=plombier_nom,
+            artisan_nom=artisan_nom,
             devis_numero=devis["numero"],
             devis_id=devis_id,
         )

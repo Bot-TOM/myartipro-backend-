@@ -42,8 +42,8 @@ def relancer_devis_sans_reponse():
             print(f"[Relance] {devis['numero']} — pas d'email client, ignoré")
             continue
 
-        # Récupérer le nom du plombier
-        plombier = (
+        # Récupérer le nom de l'artisan
+        artisan = (
             db.table("profiles")
             .select("nom, prenom, entreprise")
             .eq("id", devis["user_id"])
@@ -51,11 +51,11 @@ def relancer_devis_sans_reponse():
             .execute()
         ).data
 
-        if not plombier:
-            print(f"[Relance] {devis['numero']} — profil plombier introuvable, ignoré")
+        if not artisan:
+            print(f"[Relance] {devis['numero']} — profil artisan introuvable, ignoré")
             continue
 
-        plombier_nom = plombier.get("entreprise") or f"{plombier.get('prenom', '')} {plombier.get('nom', '')}".strip()
+        artisan_nom = artisan.get("entreprise") or f"{artisan.get('prenom', '')} {artisan.get('nom', '')}".strip()
         client_nom = f"{client.get('prenom', '')} {client.get('nom', '')}".strip()
 
         # Calcul des jours depuis l'envoi
@@ -66,7 +66,7 @@ def relancer_devis_sans_reponse():
             envoyer_relance_email(
                 client_email=client["email"],
                 client_nom=client_nom,
-                plombier_nom=plombier_nom,
+                artisan_nom=artisan_nom,
                 devis_numero=devis["numero"],
                 jours_depuis_envoi=jours,
             )

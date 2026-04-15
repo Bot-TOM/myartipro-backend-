@@ -9,7 +9,7 @@ def creer_checkout_session(
     facture_numero: str,
     montant_ttc: float,
     client_email: str,
-    plombier_nom: str,
+    artisan_nom: str,
 ) -> str:
     """Crée une session Stripe Checkout et retourne l'URL de paiement."""
     app_url = os.getenv("APP_URL", "http://localhost:5173")
@@ -25,7 +25,7 @@ def creer_checkout_session(
                     "unit_amount": int(round(montant_ttc * 100)),
                     "product_data": {
                         "name": f"Facture {facture_numero}",
-                        "description": f"Paiement à {plombier_nom}",
+                        "description": f"Paiement à {artisan_nom}",
                     },
                 },
                 "quantity": 1,

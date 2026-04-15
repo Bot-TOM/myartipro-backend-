@@ -12,7 +12,7 @@ def _init_resend():
 def envoyer_devis_email(
     client_email: str,
     client_nom: str,
-    plombier_nom: str,
+    artisan_nom: str,
     devis_numero: str,
     devis_id: str,
 ):
@@ -27,11 +27,11 @@ def envoyer_devis_email(
             {
                 "from": os.getenv("EMAIL_FROM", "MyArtipro <onboarding@resend.dev>"),
                 "to": client_email,
-                "subject": f"Devis {devis_numero} — {plombier_nom}",
+                "subject": f"Devis {devis_numero} — {artisan_nom}",
                 "html": f"""
 <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px">
     <h2 style="color:#2563eb">Bonjour {client_nom},</h2>
-    <p>{plombier_nom} vous a envoye le devis <strong>{devis_numero}</strong>.</p>
+    <p>{artisan_nom} vous a envoye le devis <strong>{devis_numero}</strong>.</p>
     <p>Vous pouvez le consulter en cliquant sur le lien ci-dessous :</p>
     <p style="margin:24px 0">
         <a href="{pdf_link}"
@@ -41,7 +41,7 @@ def envoyer_devis_email(
         </a>
     </p>
     <p>N'hesitez pas a repondre a cet email pour toute question.</p>
-    <p>Cordialement,<br><strong>{plombier_nom}</strong></p>
+    <p>Cordialement,<br><strong>{artisan_nom}</strong></p>
     <hr style="border:none;border-top:1px solid #eee;margin:24px 0">
     <p style="font-size:12px;color:#999">
         Envoye via MyArtipro
@@ -60,7 +60,7 @@ def envoyer_devis_email(
 def envoyer_relance_email(
     client_email: str,
     client_nom: str,
-    plombier_nom: str,
+    artisan_nom: str,
     devis_numero: str,
     jours_depuis_envoi: int,
 ):
@@ -72,16 +72,16 @@ def envoyer_relance_email(
             {
                 "from": os.getenv("EMAIL_FROM", "MyArtipro <onboarding@resend.dev>"),
                 "to": client_email,
-                "subject": f"Relance — Devis {devis_numero} ({plombier_nom})",
+                "subject": f"Relance — Devis {devis_numero} ({artisan_nom})",
                 "html": f"""
 <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px">
     <h2 style="color:#2563eb">Bonjour {client_nom},</h2>
     <p>Nous nous permettons de revenir vers vous concernant le devis
     <strong>{devis_numero}</strong> envoye il y a {jours_depuis_envoi} jours
-    par {plombier_nom}.</p>
+    par {artisan_nom}.</p>
     <p>Si vous avez des questions ou souhaitez y donner suite,
     n'hesitez pas a nous contacter.</p>
-    <p>Cordialement,<br><strong>{plombier_nom}</strong></p>
+    <p>Cordialement,<br><strong>{artisan_nom}</strong></p>
     <hr style="border:none;border-top:1px solid #eee;margin:24px 0">
     <p style="font-size:12px;color:#999">
         Envoye via MyArtipro

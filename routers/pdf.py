@@ -7,8 +7,8 @@ from utils.auth import get_current_user
 router = APIRouter()
 
 
-def _get_plombier(db, user_id: str) -> dict:
-    """Récupère le profil plombier, retourne un dict vide par défaut si absent."""
+def _get_artisan(db, user_id: str) -> dict:
+    """Récupère le profil artisan, retourne un dict vide par défaut si absent."""
     try:
         result = db.table("profiles").select("*").eq("id", user_id).execute()
         if result.data and len(result.data) > 0:
@@ -39,10 +39,10 @@ async def public_devis_pdf(devis_id: str):
     if devis.get("statut") not in ("envoyé", "relancé", "accepté", "facturé"):
         raise HTTPException(status_code=403, detail="Ce devis n'est pas accessible")
 
-    plombier = _get_plombier(db, devis["user_id"])
+    artisan = _get_artisan(db,devis["user_id"])
 
     try:
-        pdf_bytes = bytes(generer_pdf_devis(devis, devis.get("clients") or {}, plombier))
+        pdf_bytes = bytes(generer_pdf_devis(devis, devis.get("clients") or {}, artisan))
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Erreur generation PDF: {str(e)}")
@@ -75,10 +75,10 @@ async def download_facture_pdf(
         raise HTTPException(status_code=404, detail="Facture non trouvée")
 
     facture = result.data[0]
-    plombier = _get_plombier(db, current_user["id"])
+    artisan = _get_artisan(db,current_user["id"])
 
     try:
-        pdf_bytes = bytes(generer_pdf_facture(facture, facture.get("clients") or {}, plombier))
+        pdf_bytes = bytes(generer_pdf_facture(facture, facture.get("clients") or {}, artisan))
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Erreur generation PDF: {str(e)}")
@@ -111,10 +111,10 @@ async def download_devis_pdf(
         raise HTTPException(status_code=404, detail="Devis non trouve")
 
     devis = result.data[0]
-    plombier = _get_plombier(db, current_user["id"])
+    artisan = _get_artisan(db,current_user["id"])
 
     try:
-        pdf_bytes = bytes(generer_pdf_devis(devis, devis.get("clients") or {}, plombier))
+        pdf_bytes = bytes(generer_pdf_devis(devis, devis.get("clients") or {}, artisan))
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Erreur generation PDF: {str(e)}")

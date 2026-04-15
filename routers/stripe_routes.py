@@ -34,8 +34,8 @@ async def creer_lien_paiement(
     if not client or not client.get("email"):
         raise HTTPException(status_code=400, detail="Le client n'a pas d'adresse email")
 
-    # Récupérer le nom du plombier
-    plombier = (
+    # Récupérer le nom de l'artisan
+    artisan = (
         db.table("profiles")
         .select("nom, prenom, entreprise")
         .eq("id", current_user["id"])
@@ -43,7 +43,7 @@ async def creer_lien_paiement(
         .execute()
     ).data
 
-    plombier_nom = plombier.get("entreprise") or f"{plombier.get('prenom', '')} {plombier.get('nom', '')}".strip()
+    artisan_nom = artisan.get("entreprise") or f"{artisan.get('prenom', '')} {artisan.get('nom', '')}".strip()
 
     try:
         checkout_url = creer_checkout_session(
@@ -51,7 +51,7 @@ async def creer_lien_paiement(
             facture_numero=facture["numero"],
             montant_ttc=float(facture["montant_ttc"]),
             client_email=client["email"],
-            plombier_nom=plombier_nom,
+            artisan_nom=artisan_nom,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur Stripe : {str(e)}")

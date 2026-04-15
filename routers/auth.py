@@ -26,7 +26,7 @@ class ProfileUpdate(BaseModel):
 
 @router.get("/me")
 async def get_profile(current_user: dict = Depends(get_current_user)):
-    """Récupère le profil du plombier connecté."""
+    """Récupère le profil de l'artisan connecté."""
     result = (
         get_supabase_for_user(current_user["token"]).table("profiles")
         .select("*")
@@ -44,7 +44,7 @@ async def update_profile(
     data: ProfileUpdate,
     current_user: dict = Depends(get_current_user),
 ):
-    """Met à jour le profil du plombier connecté."""
+    """Met à jour le profil de l'artisan connecté."""
     update_data = data.model_dump(exclude_unset=True)
     if not update_data:
         raise HTTPException(status_code=400, detail="Aucune donnée à mettre à jour")

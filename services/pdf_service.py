@@ -5,32 +5,32 @@ FONT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "fonts
 
 
 class DevisPDF(FPDF):
-    """PDF professionnel pour devis plombier."""
+    """PDF professionnel pour devis artisan."""
 
-    def __init__(self, plombier: dict):
+    def __init__(self, artisan: dict):
         super().__init__()
-        self.plombier = plombier
+        self.artisan = artisan
         self.set_auto_page_break(auto=True, margin=25)
 
     def header(self):
         # Nom entreprise
         self.set_font("Helvetica", "B", 20)
         self.set_text_color(37, 99, 235)  # primary-600
-        nom = self.plombier.get("entreprise") or f"{self.plombier.get('prenom', '')} {self.plombier.get('nom', '')}"
+        nom = self.artisan.get("entreprise") or f"{self.artisan.get('prenom', '')} {self.artisan.get('nom', '')}"
         self.cell(0, 10, _safe(nom), new_x="LMARGIN", new_y="NEXT")
 
-        # Coordonnées plombier
+        # Coordonnées artisan
         self.set_font("Helvetica", "", 8)
         self.set_text_color(100, 100, 100)
         infos = []
-        if self.plombier.get("adresse"):
-            infos.append(self.plombier["adresse"])
-        if self.plombier.get("telephone"):
-            infos.append(self.plombier["telephone"])
-        if self.plombier.get("email"):
-            infos.append(self.plombier["email"])
-        if self.plombier.get("siret"):
-            infos.append(f"SIRET : {self.plombier['siret']}")
+        if self.artisan.get("adresse"):
+            infos.append(self.artisan["adresse"])
+        if self.artisan.get("telephone"):
+            infos.append(self.artisan["telephone"])
+        if self.artisan.get("email"):
+            infos.append(self.artisan["email"])
+        if self.artisan.get("siret"):
+            infos.append(f"SIRET : {self.artisan['siret']}")
         self.cell(0, 4, _safe(" | ".join(infos)), new_x="LMARGIN", new_y="NEXT")
         self.ln(5)
 
@@ -38,8 +38,8 @@ class DevisPDF(FPDF):
         self.set_y(-20)
         self.set_font("Helvetica", "", 7)
         self.set_text_color(150, 150, 150)
-        nom = self.plombier.get("entreprise") or f"{self.plombier.get('prenom', '')} {self.plombier.get('nom', '')}"
-        siret = f" - SIRET {self.plombier['siret']}" if self.plombier.get("siret") else ""
+        nom = self.artisan.get("entreprise") or f"{self.artisan.get('prenom', '')} {self.artisan.get('nom', '')}"
+        siret = f" - SIRET {self.artisan['siret']}" if self.artisan.get("siret") else ""
         self.cell(0, 4, _safe(f"{nom}{siret}"), align="C", new_x="LMARGIN", new_y="NEXT")
         self.cell(
             0, 4,
@@ -87,9 +87,9 @@ def _safe(text: str) -> str:
     return text.encode("latin-1", errors="replace").decode("latin-1")
 
 
-def generer_pdf_devis(devis: dict, client: dict, plombier: dict) -> bytes:
+def generer_pdf_devis(devis: dict, client: dict, artisan: dict) -> bytes:
     """Genere un PDF professionnel du devis."""
-    pdf = DevisPDF(plombier)
+    pdf = DevisPDF(artisan)
     pdf.add_page()
 
     # === TITRE DEVIS ===
@@ -256,9 +256,9 @@ def generer_pdf_devis(devis: dict, client: dict, plombier: dict) -> bytes:
     return pdf.output()
 
 
-def generer_pdf_facture(facture: dict, client: dict, plombier: dict) -> bytes:
+def generer_pdf_facture(facture: dict, client: dict, artisan: dict) -> bytes:
     """Genere un PDF professionnel de la facture."""
-    pdf = DevisPDF(plombier)
+    pdf = DevisPDF(artisan)
     pdf.add_page()
 
     # === TITRE FACTURE ===
