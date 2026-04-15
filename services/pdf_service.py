@@ -1,0 +1,418 @@
+from fpdf import FPDF
+import os
+
+FONT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "fonts")
+
+
+class DevisPDF(FPDF):
+    """PDF professionnel pour devis plombier."""
+
+    def __init__(self, plombier: dict):
+        super().__init__()
+        self.plombier = plombier
+        self.set_auto_page_break(auto=True, margin=25)
+
+    def header(self):
+        # Nom entreprise
+        self.set_font("Helvetica", "B", 20)
+        self.set_text_color(37, 99, 235)  # primary-600
+        nom = self.plombier.get("entreprise") or f"{self.plombier.get('prenom', '')} {self.plombier.get('nom', '')}"
+        self.cell(0, 10, _safe(nom), new_x="LMARGIN", new_y="NEXT")
+
+        # Coordonnées plombier
+        self.set_font("Helvetica", "", 8)
+        self.set_text_color(100, 100, 100)
+        infos = []
+        if self.plombier.get("adresse"):
+            infos.append(self.plombier["adresse"])
+        if self.plombier.get("telephone"):
+            infos.append(self.plombier["telephone"])
+        if self.plombier.get("email"):
+            infos.append(self.plombier["email"])
+        if self.plombier.get("siret"):
+            infos.append(f"SIRET : {self.plombier['siret']}")
+        self.cell(0, 4, _safe(" | ".join(infos)), new_x="LMARGIN", new_y="NEXT")
+        self.ln(5)
+
+    def footer(self):
+        self.set_y(-20)
+        self.set_font("Helvetica", "", 7)
+        self.set_text_color(150, 150, 150)
+        nom = self.plombier.get("entreprise") or f"{self.plombier.get('prenom', '')} {self.plombier.get('nom', '')}"
+        siret = f" - SIRET {self.plombier['siret']}" if self.plombier.get("siret") else ""
+        self.cell(0, 4, _safe(f"{nom}{siret}"), align="C", new_x="LMARGIN", new_y="NEXT")
+        self.cell(
+            0, 4,
+            _safe("Devis valable 30 jours sauf mention contraire - TVA non applicable, art. 293 B du CGI (si auto-entrepreneur)"),
+            align="C",
+        )
+
+
+def _safe(text: str) -> str:
+    """Remplace les caractères spéciaux pour compatibilité latin-1 (Helvetica)."""
+    if not text:
+        return ""
+    replacements = {
+        # Guillemets et ponctuations spéciales
+        "\u2019": "'", "\u2018": "'", "\u201c": '"', "\u201d": '"',
+        "\u2013": "-", "\u2014": "-", "\u2026": "...", "\u20ac": "EUR",
+        "\u00ab": '"', "\u00bb": '"',
+        # Ligatures
+        "\u0153": "oe", "\u0152": "OE",  # œ Œ
+        "\u00e6": "ae", "\u00c6": "AE",  # æ Æ
+        # Voyelles accentuées minuscules
+        "\u00e9": "e", "\u00e8": "e", "\u00ea": "e", "\u00eb": "e",
+        "\u00e0": "a", "\u00e2": "a", "\u00e4": "a",
+        "\u00f4": "o", "\u00f6": "o",
+        "\u00fb": "u", "\u00fc": "u", "\u00f9": "u",
+        "\u00ee": "i", "\u00ef": "i",
+        "\u00e7": "c",
+        "\u00f1": "n",
+        "\u00ff": "y",
+        # Voyelles accentuées majuscules
+        "\u00c9": "E", "\u00c8": "E", "\u00ca": "E", "\u00cb": "E",
+        "\u00c0": "A", "\u00c2": "A", "\u00c4": "A",
+        "\u00d4": "O", "\u00d6": "O",
+        "\u00db": "U", "\u00dc": "U", "\u00d9": "U",
+        "\u00ce": "I", "\u00cf": "I",
+        "\u00c7": "C",
+        "\u00d1": "N",
+        # Symboles
+        "\u00b0": "°", "\u00b2": "2", "\u00b3": "3",
+        "\u2032": "'", "\u2033": '"',
+    }
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    # Supprimer tout caractère restant hors latin-1
+    return text.encode("latin-1", errors="replace").decode("latin-1")
+
+
+def generer_pdf_devis(devis: dict, client: dict, plombier: dict) -> bytes:
+    """Genere un PDF professionnel du devis."""
+    pdf = DevisPDF(plombier)
+    pdf.add_page()
+
+    # === TITRE DEVIS ===
+    pdf.set_font("Helvetica", "B", 24)
+    pdf.set_text_color(37, 99, 235)
+    pdf.cell(100, 12, "DEVIS", new_x="RIGHT")
+
+    # Numero devis
+    pdf.set_font("Helvetica", "", 11)
+    pdf.set_text_color(100, 100, 100)
+    pdf.cell(0, 12, _safe(devis.get("numero", "")), align="R", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(5)
+
+    # === BLOC CLIENT ===
+    pdf.set_fill_color(248, 250, 252)
+    pdf.set_draw_color(226, 232, 240)
+    x = pdf.get_x()
+    y = pdf.get_y()
+    pdf.rect(x, y, 190, 28, style="DF")
+
+    pdf.set_xy(x + 4, y + 3)
+    pdf.set_font("Helvetica", "", 7)
+    pdf.set_text_color(148, 163, 184)
+    pdf.cell(0, 4, "CLIENT", new_x="LMARGIN", new_y="NEXT")
+
+    pdf.set_x(x + 4)
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.set_text_color(30, 30, 30)
+    client_nom = f"{client.get('prenom', '')} {client.get('nom', '')}".strip()
+    pdf.cell(0, 5, _safe(client_nom), new_x="LMARGIN", new_y="NEXT")
+
+    pdf.set_x(x + 4)
+    pdf.set_font("Helvetica", "", 9)
+    pdf.set_text_color(80, 80, 80)
+    client_infos = []
+    if client.get("adresse"):
+        client_infos.append(client["adresse"])
+    if client.get("telephone"):
+        client_infos.append(client["telephone"])
+    if client.get("email"):
+        client_infos.append(client["email"])
+    pdf.cell(0, 4, _safe(" | ".join(client_infos)), new_x="LMARGIN", new_y="NEXT")
+
+    pdf.set_y(y + 32)
+
+    # === META (objet, date, validite) ===
+    pdf.set_font("Helvetica", "", 7)
+    pdf.set_text_color(148, 163, 184)
+    pdf.cell(80, 4, "OBJET", new_x="RIGHT")
+    pdf.cell(50, 4, "DATE", new_x="RIGHT")
+    if devis.get("date_validite"):
+        pdf.cell(0, 4, "VALIDE JUSQU'AU", new_x="LMARGIN", new_y="NEXT")
+    else:
+        pdf.cell(0, 4, "", new_x="LMARGIN", new_y="NEXT")
+
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.set_text_color(30, 30, 30)
+    pdf.cell(80, 5, _safe(devis.get("titre", "")), new_x="RIGHT")
+
+    date_creation = devis.get("date_creation", "")
+    if isinstance(date_creation, str) and len(date_creation) >= 10:
+        date_str = date_creation[:10]
+    else:
+        date_str = str(date_creation)[:10] if date_creation else ""
+    pdf.cell(50, 5, _safe(date_str), new_x="RIGHT")
+
+    if devis.get("date_validite"):
+        dv = devis["date_validite"]
+        dv_str = dv[:10] if isinstance(dv, str) and len(dv) >= 10 else str(dv)[:10]
+        pdf.cell(0, 5, _safe(dv_str), new_x="LMARGIN", new_y="NEXT")
+    else:
+        pdf.cell(0, 5, "", new_x="LMARGIN", new_y="NEXT")
+
+    pdf.ln(8)
+
+    # === TABLEAU PRESTATIONS ===
+    col_widths = [90, 20, 40, 40]
+    headers = ["Description", "Qte", "Prix unit. HT", "Total HT"]
+
+    # En-tete
+    pdf.set_fill_color(37, 99, 235)
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font("Helvetica", "B", 8)
+    for i, header in enumerate(headers):
+        align = "L" if i == 0 else "R"
+        pdf.cell(col_widths[i], 8, header, border=0, fill=True, align=align)
+    pdf.ln()
+
+    # Lignes
+    pdf.set_text_color(50, 50, 50)
+    pdf.set_font("Helvetica", "", 9)
+    prestations = devis.get("prestations", [])
+
+    for j, p in enumerate(prestations):
+        desc = p.get("description", "")
+        qte = p.get("quantite", 1)
+        prix = p.get("prix_unitaire", 0)
+        total = qte * prix
+
+        # Fond alterné
+        if j % 2 == 1:
+            pdf.set_fill_color(248, 250, 252)
+            fill = True
+        else:
+            fill = False
+
+        pdf.cell(col_widths[0], 8, _safe(desc), border=0, fill=fill)
+        pdf.cell(col_widths[1], 8, str(qte), border=0, fill=fill, align="R")
+        pdf.cell(col_widths[2], 8, f"{prix:.2f} EUR", border=0, fill=fill, align="R")
+        pdf.cell(col_widths[3], 8, f"{total:.2f} EUR", border=0, fill=fill, align="R")
+        pdf.ln()
+
+    # Ligne de separation
+    pdf.set_draw_color(37, 99, 235)
+    pdf.line(pdf.get_x(), pdf.get_y(), pdf.get_x() + 190, pdf.get_y())
+    pdf.ln(5)
+
+    # === TOTAUX ===
+    montant_ht = float(devis.get("montant_ht", 0))
+    tva_pct = float(devis.get("tva", 20))
+    montant_ttc = float(devis.get("montant_ttc", 0))
+    montant_tva = montant_ttc - montant_ht
+
+    x_label = 130
+    x_value = 170
+
+    pdf.set_font("Helvetica", "", 9)
+    pdf.set_text_color(100, 100, 100)
+    pdf.set_x(x_label)
+    pdf.cell(40, 6, "Total HT", align="L")
+    pdf.cell(20, 6, f"{montant_ht:.2f} EUR", align="R", new_x="LMARGIN", new_y="NEXT")
+
+    pdf.set_x(x_label)
+    pdf.cell(40, 6, f"TVA ({tva_pct:.0f}%)", align="L")
+    pdf.cell(20, 6, f"{montant_tva:.2f} EUR", align="R", new_x="LMARGIN", new_y="NEXT")
+
+    # Ligne
+    pdf.set_draw_color(37, 99, 235)
+    pdf.line(x_label, pdf.get_y(), x_label + 60, pdf.get_y())
+    pdf.ln(2)
+
+    pdf.set_font("Helvetica", "B", 13)
+    pdf.set_text_color(37, 99, 235)
+    pdf.set_x(x_label)
+    pdf.cell(40, 8, "Total TTC", align="L")
+    pdf.cell(20, 8, f"{montant_ttc:.2f} EUR", align="R", new_x="LMARGIN", new_y="NEXT")
+
+    # === NOTES ===
+    if devis.get("notes"):
+        pdf.ln(8)
+        pdf.set_fill_color(255, 251, 235)
+        pdf.set_draw_color(253, 230, 138)
+        y_notes = pdf.get_y()
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.set_text_color(80, 80, 80)
+        pdf.set_x(pdf.get_x())
+        pdf.rect(pdf.get_x(), y_notes, 190, 16, style="DF")
+        pdf.set_xy(pdf.get_x() + 4, y_notes + 2)
+        pdf.cell(0, 5, "Notes / Conditions :", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_x(pdf.get_x() + 4)
+        pdf.set_font("Helvetica", "", 9)
+        pdf.cell(0, 5, _safe(devis["notes"]), new_x="LMARGIN", new_y="NEXT")
+
+    return pdf.output()
+
+
+def generer_pdf_facture(facture: dict, client: dict, plombier: dict) -> bytes:
+    """Genere un PDF professionnel de la facture."""
+    pdf = DevisPDF(plombier)
+    pdf.add_page()
+
+    # === TITRE FACTURE ===
+    pdf.set_font("Helvetica", "B", 24)
+    pdf.set_text_color(37, 99, 235)
+    pdf.cell(100, 12, "FACTURE", new_x="RIGHT")
+
+    # Numero facture
+    pdf.set_font("Helvetica", "", 11)
+    pdf.set_text_color(100, 100, 100)
+    pdf.cell(0, 12, _safe(facture.get("numero", "")), align="R", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(5)
+
+    # === BLOC CLIENT ===
+    pdf.set_fill_color(248, 250, 252)
+    pdf.set_draw_color(226, 232, 240)
+    x = pdf.get_x()
+    y = pdf.get_y()
+    pdf.rect(x, y, 190, 28, style="DF")
+
+    pdf.set_xy(x + 4, y + 3)
+    pdf.set_font("Helvetica", "", 7)
+    pdf.set_text_color(148, 163, 184)
+    pdf.cell(0, 4, "CLIENT", new_x="LMARGIN", new_y="NEXT")
+
+    pdf.set_x(x + 4)
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.set_text_color(30, 30, 30)
+    client_nom = f"{client.get('prenom', '')} {client.get('nom', '')}".strip()
+    pdf.cell(0, 5, _safe(client_nom), new_x="LMARGIN", new_y="NEXT")
+
+    pdf.set_x(x + 4)
+    pdf.set_font("Helvetica", "", 9)
+    pdf.set_text_color(80, 80, 80)
+    client_infos = []
+    if client.get("adresse"):
+        client_infos.append(client["adresse"])
+    if client.get("telephone"):
+        client_infos.append(client["telephone"])
+    if client.get("email"):
+        client_infos.append(client["email"])
+    pdf.cell(0, 4, _safe(" | ".join(client_infos)), new_x="LMARGIN", new_y="NEXT")
+
+    pdf.set_y(y + 32)
+
+    # === META (objet, date, echeance) ===
+    pdf.set_font("Helvetica", "", 7)
+    pdf.set_text_color(148, 163, 184)
+    pdf.cell(80, 4, "OBJET", new_x="RIGHT")
+    pdf.cell(50, 4, "DATE", new_x="RIGHT")
+    if facture.get("date_echeance"):
+        pdf.cell(0, 4, "ECHEANCE", new_x="LMARGIN", new_y="NEXT")
+    else:
+        pdf.cell(0, 4, "", new_x="LMARGIN", new_y="NEXT")
+
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.set_text_color(30, 30, 30)
+    pdf.cell(80, 5, _safe(facture.get("titre", "")), new_x="RIGHT")
+
+    date_creation = facture.get("date_creation", "")
+    if isinstance(date_creation, str) and len(date_creation) >= 10:
+        date_str = date_creation[:10]
+    else:
+        date_str = str(date_creation)[:10] if date_creation else ""
+    pdf.cell(50, 5, _safe(date_str), new_x="RIGHT")
+
+    if facture.get("date_echeance"):
+        de = facture["date_echeance"]
+        de_str = de[:10] if isinstance(de, str) and len(de) >= 10 else str(de)[:10]
+        pdf.cell(0, 5, _safe(de_str), new_x="LMARGIN", new_y="NEXT")
+    else:
+        pdf.cell(0, 5, "", new_x="LMARGIN", new_y="NEXT")
+
+    pdf.ln(8)
+
+    # === TABLEAU PRESTATIONS ===
+    col_widths = [90, 20, 40, 40]
+    headers = ["Description", "Qte", "Prix unit. HT", "Total HT"]
+
+    pdf.set_fill_color(37, 99, 235)
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font("Helvetica", "B", 8)
+    for i, header in enumerate(headers):
+        align = "L" if i == 0 else "R"
+        pdf.cell(col_widths[i], 8, header, border=0, fill=True, align=align)
+    pdf.ln()
+
+    pdf.set_text_color(50, 50, 50)
+    pdf.set_font("Helvetica", "", 9)
+    prestations = facture.get("prestations", [])
+
+    for j, p in enumerate(prestations):
+        desc = p.get("description", "")
+        qte = p.get("quantite", 1)
+        prix = p.get("prix_unitaire", 0)
+        total = qte * prix
+
+        if j % 2 == 1:
+            pdf.set_fill_color(248, 250, 252)
+            fill = True
+        else:
+            fill = False
+
+        pdf.cell(col_widths[0], 8, _safe(desc), border=0, fill=fill)
+        pdf.cell(col_widths[1], 8, str(qte), border=0, fill=fill, align="R")
+        pdf.cell(col_widths[2], 8, f"{prix:.2f} EUR", border=0, fill=fill, align="R")
+        pdf.cell(col_widths[3], 8, f"{total:.2f} EUR", border=0, fill=fill, align="R")
+        pdf.ln()
+
+    pdf.set_draw_color(37, 99, 235)
+    pdf.line(pdf.get_x(), pdf.get_y(), pdf.get_x() + 190, pdf.get_y())
+    pdf.ln(5)
+
+    # === TOTAUX ===
+    montant_ht = float(facture.get("montant_ht", 0))
+    tva_pct = float(facture.get("tva", 20))
+    montant_ttc = float(facture.get("montant_ttc", 0))
+    montant_tva = montant_ttc - montant_ht
+
+    x_label = 130
+
+    pdf.set_font("Helvetica", "", 9)
+    pdf.set_text_color(100, 100, 100)
+    pdf.set_x(x_label)
+    pdf.cell(40, 6, "Total HT", align="L")
+    pdf.cell(20, 6, f"{montant_ht:.2f} EUR", align="R", new_x="LMARGIN", new_y="NEXT")
+
+    pdf.set_x(x_label)
+    pdf.cell(40, 6, f"TVA ({tva_pct:.0f}%)", align="L")
+    pdf.cell(20, 6, f"{montant_tva:.2f} EUR", align="R", new_x="LMARGIN", new_y="NEXT")
+
+    pdf.set_draw_color(37, 99, 235)
+    pdf.line(x_label, pdf.get_y(), x_label + 60, pdf.get_y())
+    pdf.ln(2)
+
+    pdf.set_font("Helvetica", "B", 13)
+    pdf.set_text_color(37, 99, 235)
+    pdf.set_x(x_label)
+    pdf.cell(40, 8, "Total TTC", align="L")
+    pdf.cell(20, 8, f"{montant_ttc:.2f} EUR", align="R", new_x="LMARGIN", new_y="NEXT")
+
+    # === NOTES ===
+    if facture.get("notes"):
+        pdf.ln(8)
+        pdf.set_fill_color(255, 251, 235)
+        pdf.set_draw_color(253, 230, 138)
+        y_notes = pdf.get_y()
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.set_text_color(80, 80, 80)
+        pdf.rect(pdf.get_x(), y_notes, 190, 16, style="DF")
+        pdf.set_xy(pdf.get_x() + 4, y_notes + 2)
+        pdf.cell(0, 5, "Notes :", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_x(pdf.get_x() + 4)
+        pdf.set_font("Helvetica", "", 9)
+        pdf.cell(0, 5, _safe(facture["notes"]), new_x="LMARGIN", new_y="NEXT")
+
+    return pdf.output()
