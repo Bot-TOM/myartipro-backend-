@@ -16,7 +16,7 @@ load_dotenv(env_path.parent / ".env")
 from routers import auth, clients, devis, pdf, factures, stripe_routes, rappels
 
 limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
-app = FastAPI(title="PlombierPro API", version="1.0.0")
+app = FastAPI(title="MyArtipro API", version="1.0.0")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -47,7 +47,7 @@ async def global_exception_handler(request, exc):
 
 @app.get("/")
 async def root():
-    return {"message": "PlombierPro API is running"}
+    return {"message": "MyArtipro API is running"}
 
 
 # === SCHEDULER : relances automatiques ===

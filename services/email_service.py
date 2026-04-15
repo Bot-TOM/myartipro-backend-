@@ -25,7 +25,7 @@ def envoyer_devis_email(
     try:
         result = resend.Emails.send(
             {
-                "from": os.getenv("EMAIL_FROM", "PlombierPro <onboarding@resend.dev>"),
+                "from": os.getenv("EMAIL_FROM", "MyArtipro <onboarding@resend.dev>"),
                 "to": client_email,
                 "subject": f"Devis {devis_numero} — {plombier_nom}",
                 "html": f"""
@@ -44,7 +44,7 @@ def envoyer_devis_email(
     <p>Cordialement,<br><strong>{plombier_nom}</strong></p>
     <hr style="border:none;border-top:1px solid #eee;margin:24px 0">
     <p style="font-size:12px;color:#999">
-        Envoye via PlombierPro
+        Envoye via MyArtipro
     </p>
 </div>
                 """,
@@ -70,7 +70,7 @@ def envoyer_relance_email(
     try:
         result = resend.Emails.send(
             {
-                "from": os.getenv("EMAIL_FROM", "PlombierPro <onboarding@resend.dev>"),
+                "from": os.getenv("EMAIL_FROM", "MyArtipro <onboarding@resend.dev>"),
                 "to": client_email,
                 "subject": f"Relance — Devis {devis_numero} ({plombier_nom})",
                 "html": f"""
@@ -84,7 +84,7 @@ def envoyer_relance_email(
     <p>Cordialement,<br><strong>{plombier_nom}</strong></p>
     <hr style="border:none;border-top:1px solid #eee;margin:24px 0">
     <p style="font-size:12px;color:#999">
-        Envoye via PlombierPro
+        Envoye via MyArtipro
     </p>
 </div>
                 """,
