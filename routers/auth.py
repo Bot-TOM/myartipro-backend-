@@ -100,14 +100,31 @@ class ProfileUpdate(BaseModel):
 
 @router.get("/me")
 async def get_profile(current_user: dict = Depends(get_current_user)):
-    """Récupère le profil de l'artisan connecté."""
+    """Récupère le profil de l'artisan connecté. Crée le profil s'il n'existe pas (auto-healing)."""
+    db_user = get_supabase_for_user(current_user["token"])
     result = (
-        get_supabase_for_user(current_user["token"]).table("profiles")
+        db_user.table("profiles")
         .select("*")
         .eq("id", current_user["id"])
         .single()
         .execute()
     )
+    if not result.data:
+        # Auto-création du profil manquant (utilisateurs créés avant le fix d'inscription)
+        try:
+            get_supabase().table("profiles").insert({
+                "id": current_user["id"],
+                "email": current_user.get("email", ""),
+            }).execute()
+        except Exception:
+            pass  # Peut déjà exister en race condition
+        result = (
+            db_user.table("profiles")
+            .select("*")
+            .eq("id", current_user["id"])
+            .single()
+            .execute()
+        )
     if not result.data:
         raise HTTPException(status_code=404, detail="Profil non trouvé")
     return result.data
