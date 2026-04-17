@@ -1,5 +1,7 @@
 from fpdf import FPDF
 import os
+import tempfile
+import httpx
 
 FONT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "fonts")
 
@@ -13,6 +15,24 @@ class DevisPDF(FPDF):
         self.set_auto_page_break(auto=True, margin=25)
 
     def header(self):
+        # Logo si disponible
+        logo_url = self.artisan.get("logo_url")
+        if logo_url:
+            try:
+                resp = httpx.get(logo_url, timeout=5)
+                if resp.status_code == 200:
+                    ext = "png"
+                    if "jpeg" in resp.headers.get("content-type", "") or "jpg" in logo_url.lower():
+                        ext = "jpg"
+                    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=f".{ext}")
+                    tmp.write(resp.content)
+                    tmp.close()
+                    self.image(tmp.name, x=10, y=8, h=18)
+                    os.unlink(tmp.name)
+                    self.set_xy(40, 8)
+            except Exception:
+                pass  # Si le logo échoue, on continue sans
+
         # Nom entreprise
         self.set_font("Helvetica", "B", 20)
         self.set_text_color(37, 99, 235)  # primary-600
@@ -23,15 +43,20 @@ class DevisPDF(FPDF):
         self.set_font("Helvetica", "", 8)
         self.set_text_color(100, 100, 100)
         infos = []
-        if self.artisan.get("adresse"):
-            infos.append(self.artisan["adresse"])
-        if self.artisan.get("telephone"):
-            infos.append(self.artisan["telephone"])
-        if self.artisan.get("email"):
-            infos.append(self.artisan["email"])
-        if self.artisan.get("siret"):
-            infos.append(f"SIRET : {self.artisan['siret']}")
-        self.cell(0, 4, _safe(" | ".join(infos)), new_x="LMARGIN", new_y="NEXT")
+        adresse = (self.artisan.get("adresse") or "").strip()
+        telephone = (self.artisan.get("telephone") or "").strip()
+        email = (self.artisan.get("email") or "").strip()
+        siret = (self.artisan.get("siret") or "").strip()
+        if adresse:
+            infos.append(adresse)
+        if telephone:
+            infos.append(telephone)
+        if email:
+            infos.append(email)
+        if siret:
+            infos.append(f"SIRET : {siret}")
+        if infos:
+            self.cell(0, 4, _safe(" | ".join(infos)), new_x="LMARGIN", new_y="NEXT")
         self.ln(5)
 
     def footer(self):
@@ -124,14 +149,13 @@ def generer_pdf_devis(devis: dict, client: dict, artisan: dict) -> bytes:
     pdf.set_x(x + 4)
     pdf.set_font("Helvetica", "", 9)
     pdf.set_text_color(80, 80, 80)
-    client_infos = []
-    if client.get("adresse"):
-        client_infos.append(client["adresse"])
-    if client.get("telephone"):
-        client_infos.append(client["telephone"])
-    if client.get("email"):
-        client_infos.append(client["email"])
-    pdf.cell(0, 4, _safe(" | ".join(client_infos)), new_x="LMARGIN", new_y="NEXT")
+    client_infos = [v.strip() for v in [
+        client.get("adresse") or "",
+        client.get("telephone") or "",
+        client.get("email") or "",
+    ] if (v or "").strip()]
+    if client_infos:
+        pdf.cell(0, 4, _safe(" | ".join(client_infos)), new_x="LMARGIN", new_y="NEXT")
 
     pdf.set_y(y + 32)
 
@@ -293,14 +317,13 @@ def generer_pdf_facture(facture: dict, client: dict, artisan: dict) -> bytes:
     pdf.set_x(x + 4)
     pdf.set_font("Helvetica", "", 9)
     pdf.set_text_color(80, 80, 80)
-    client_infos = []
-    if client.get("adresse"):
-        client_infos.append(client["adresse"])
-    if client.get("telephone"):
-        client_infos.append(client["telephone"])
-    if client.get("email"):
-        client_infos.append(client["email"])
-    pdf.cell(0, 4, _safe(" | ".join(client_infos)), new_x="LMARGIN", new_y="NEXT")
+    client_infos = [v.strip() for v in [
+        client.get("adresse") or "",
+        client.get("telephone") or "",
+        client.get("email") or "",
+    ] if (v or "").strip()]
+    if client_infos:
+        pdf.cell(0, 4, _safe(" | ".join(client_infos)), new_x="LMARGIN", new_y="NEXT")
 
     pdf.set_y(y + 32)
 

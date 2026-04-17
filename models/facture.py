@@ -27,3 +27,5 @@ class FactureResponse(BaseModel):
     date_echeance: Optional[datetime] = None
     date_paiement: Optional[datetime] = None
     notes: Optional[str] = None
+    stripe_checkout_url: Optional[str] = None
+    clients: Optional[dict] = None

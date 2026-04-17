@@ -1,6 +1,7 @@
+import uuid
 from fastapi import APIRouter, HTTPException, Depends
 from models.devis import DevisCreate, DevisUpdate
-from utils.supabase_client import get_supabase_for_user
+from utils.supabase_client import get_supabase_for_user, get_supabase
 from utils.auth import get_current_user
 from services.email_service import envoyer_devis_email
 from datetime import datetime, timezone
@@ -187,7 +188,10 @@ async def envoyer_devis(
         .execute()
     ).data
 
-    artisan_nom = artisan.get("entreprise") or f"{artisan['prenom']} {artisan['nom']}"
+    artisan_nom = artisan.get("entreprise") or f"{artisan.get('prenom', '')} {artisan.get('nom', '')}".strip()
+
+    # Générer un token d'acceptation sécurisé
+    acceptance_token = str(uuid.uuid4())
 
     try:
         envoyer_devis_email(
@@ -196,15 +200,113 @@ async def envoyer_devis(
             artisan_nom=artisan_nom,
             devis_numero=devis["numero"],
             devis_id=devis_id,
+            acceptance_token=acceptance_token,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur envoi email: {str(e)}")
 
-    db.table("devis").update(
-        {"statut": "envoyé", "date_envoi": datetime.now(timezone.utc).isoformat()}
-    ).eq("id", devis_id).execute()
+    db.table("devis").update({
+        "statut": "envoyé",
+        "date_envoi": datetime.now(timezone.utc).isoformat(),
+        "acceptance_token": acceptance_token,
+    }).eq("id", devis_id).execute()
+
+    # Sync statut client → devis_envoye
+    if devis.get("client_id"):
+        db.table("clients").update({"statut": "devis_envoye"}).eq("id", devis["client_id"]).execute()
 
     return {"message": f"Devis {devis['numero']} envoyé à {client['email']}"}
+
+
+# ── Routes publiques (sans auth) ─────────────────────────────────────────────
+
+@router.get("/public/{acceptance_token}")
+async def get_devis_public(acceptance_token: str):
+    """Récupère les infos d'un devis via son token — accessible sans auth."""
+    db = get_supabase()
+    result = (
+        db.table("devis")
+        .select("id, numero, titre, prestations, montant_ht, tva, montant_ttc, statut, date_creation, date_validite, notes, user_id, clients(nom, prenom, adresse)")
+        .eq("acceptance_token", acceptance_token)
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Devis introuvable ou lien invalide")
+
+    devis = result.data[0]
+
+    # Marquer comme consulté si encore en statut envoyé/relancé
+    if devis["statut"] in ("envoyé", "relancé"):
+        db.table("devis").update({"statut": "consulté"}).eq("acceptance_token", acceptance_token).execute()
+        devis["statut"] = "consulté"
+
+    # Récupérer les infos paiement de l'artisan
+    profile = db.table("profiles").select(
+        "stripe_enabled, moyens_paiement, instructions_paiement, entreprise, prenom, nom"
+    ).eq("id", devis["user_id"]).single().execute()
+
+    devis["artisan_paiement"] = {
+        "stripe_enabled": profile.data.get("stripe_enabled", False) if profile.data else False,
+        "moyens_paiement": profile.data.get("moyens_paiement") or [] if profile.data else [],
+        "instructions_paiement": profile.data.get("instructions_paiement") or "" if profile.data else "",
+        "artisan_nom": (
+            profile.data.get("entreprise") or
+            f"{profile.data.get('prenom', '')} {profile.data.get('nom', '')}".strip()
+        ) if profile.data else "",
+    }
+
+    return devis
+
+
+@router.post("/public/{acceptance_token}/accepter")
+async def accepter_devis_public(acceptance_token: str):
+    """Le client accepte le devis via son token."""
+    db = get_supabase()
+    result = db.table("devis").select("id, statut, numero, client_id").eq("acceptance_token", acceptance_token).execute()
+
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Devis introuvable ou lien invalide")
+
+    devis = result.data[0]
+    if devis["statut"] in ("facturé", "accepté"):
+        return {"message": "Devis déjà accepté"}
+    if devis["statut"] == "refusé":
+        raise HTTPException(status_code=400, detail="Ce devis a déjà été refusé")
+
+    db.table("devis").update({
+        "statut": "accepté",
+        "date_acceptation": datetime.now(timezone.utc).isoformat(),
+    }).eq("acceptance_token", acceptance_token).execute()
+
+    # Sync statut client → accepte
+    if devis.get("client_id"):
+        db.table("clients").update({"statut": "accepte"}).eq("id", devis["client_id"]).execute()
+
+    return {"message": f"Devis {devis['numero']} accepté"}
+
+
+@router.post("/public/{acceptance_token}/refuser")
+async def refuser_devis_public(acceptance_token: str):
+    """Le client refuse le devis via son token."""
+    db = get_supabase()
+    result = db.table("devis").select("id, statut, numero, client_id").eq("acceptance_token", acceptance_token).execute()
+
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Devis introuvable ou lien invalide")
+
+    devis = result.data[0]
+    if devis["statut"] == "refusé":
+        return {"message": "Devis déjà refusé"}
+    if devis["statut"] in ("facturé", "accepté"):
+        raise HTTPException(status_code=400, detail="Ce devis ne peut plus être refusé")
+
+    db.table("devis").update({"statut": "refusé"}).eq("acceptance_token", acceptance_token).execute()
+
+    # Sync statut client → a_rappeler (devis refusé = à recontacter)
+    if devis.get("client_id"):
+        db.table("clients").update({"statut": "a_rappeler"}).eq("id", devis["client_id"]).execute()
+
+    return {"message": f"Devis {devis['numero']} refusé"}
 
 
 @router.post("/relances/executer")

@@ -15,12 +15,14 @@ def envoyer_devis_email(
     artisan_nom: str,
     devis_numero: str,
     devis_id: str,
+    acceptance_token: str = "",
 ):
-    """Envoie un email au client avec le lien vers le devis PDF."""
+    """Envoie un email au client avec le lien vers le devis + boutons accepter/refuser."""
     _init_resend()
-    # Lien public vers le PDF du devis (sans auth requise)
     api_url = os.getenv("API_URL", "http://localhost:8000")
+    app_url = os.getenv("APP_URL", "http://localhost:5173")
     pdf_link = f"{api_url}/pdf/public/devis/{devis_id}"
+    accept_link = f"{app_url}/devis/public/{acceptance_token}" if acceptance_token else pdf_link
 
     try:
         result = resend.Emails.send(
@@ -32,12 +34,18 @@ def envoyer_devis_email(
 <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px">
     <h2 style="color:#2563eb">Bonjour {client_nom},</h2>
     <p>{artisan_nom} vous a envoye le devis <strong>{devis_numero}</strong>.</p>
-    <p>Vous pouvez le consulter en cliquant sur le lien ci-dessous :</p>
+    <p>Consultez-le et donnez votre reponse en cliquant ci-dessous :</p>
     <p style="margin:24px 0">
-        <a href="{pdf_link}"
+        <a href="{accept_link}"
            style="background:#2563eb;color:#fff;padding:12px 28px;
                   text-decoration:none;border-radius:6px;font-weight:bold">
-            Telecharger le devis PDF
+            Voir le devis
+        </a>
+        &nbsp;&nbsp;
+        <a href="{pdf_link}"
+           style="background:#f3f4f6;color:#374151;padding:12px 28px;
+                  text-decoration:none;border-radius:6px;font-weight:bold">
+            Telecharger le PDF
         </a>
     </p>
     <p>N'hesitez pas a repondre a cet email pour toute question.</p>

@@ -8,13 +8,14 @@ router = APIRouter()
 
 @router.get("")
 async def list_rappels(current_user: dict = Depends(get_current_user)):
-    """Liste tous les rappels de l'utilisateur, tries par date."""
+    """Liste tous les rappels de l'utilisateur, tries par date puis heure."""
     db = get_supabase_for_user(current_user["token"])
     result = (
         db.table("rappels")
         .select("*, clients(nom, prenom)")
         .eq("user_id", current_user["id"])
         .order("date_rappel", desc=False)
+        .order("heure_rappel", desc=False, nullsfirst=False)
         .execute()
     )
     return result.data
@@ -31,6 +32,7 @@ async def create_rappel(
         "user_id": current_user["id"],
         "client_id": data.client_id,
         "date_rappel": data.date_rappel,
+        "heure_rappel": data.heure_rappel or None,
         "commentaire": data.commentaire,
     }
 

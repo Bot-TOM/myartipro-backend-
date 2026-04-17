@@ -15,6 +15,10 @@ class ProfileUpdate(BaseModel):
     siret: Optional[str] = None
     telephone: Optional[str] = None
     adresse: Optional[str] = None
+    logo_url: Optional[str] = None
+    stripe_enabled: Optional[bool] = None
+    moyens_paiement: Optional[list[str]] = None
+    instructions_paiement: Optional[str] = None
 
     @field_validator("siret")
     @classmethod

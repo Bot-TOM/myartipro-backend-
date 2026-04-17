@@ -51,6 +51,9 @@ class DevisResponse(BaseModel):
     date_envoi: Optional[datetime] = None
     date_validite: Optional[datetime] = None
     date_relance: Optional[datetime] = None
+    date_acceptation: Optional[datetime] = None
     notes: Optional[str] = None
     urgence: Optional[str] = "normal"
     charge: Optional[str] = None
+    acceptance_token: Optional[str] = None
+    clients: Optional[dict] = None
