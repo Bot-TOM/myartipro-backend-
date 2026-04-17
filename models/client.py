@@ -1,11 +1,9 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
 
 
 class ClientCreate(BaseModel):
-    model_config = ConfigDict(strict=True)
-
     nom: str
     prenom: Optional[str] = None
     email: Optional[str] = None

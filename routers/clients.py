@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from models.client import ClientCreate, ClientUpdate
 from utils.supabase_client import get_supabase_for_user
 from utils.auth import get_current_user
+from utils.profile import ensure_profile
 
 router = APIRouter()
 
@@ -25,6 +26,7 @@ async def create_client(
     current_user: dict = Depends(get_current_user),
 ):
     """Crée un nouveau client."""
+    ensure_profile(current_user["id"], current_user.get("email", ""))
     data = client.model_dump()
     data["user_id"] = current_user["id"]
     result = get_supabase_for_user(current_user["token"]).table("clients").insert(data).execute()

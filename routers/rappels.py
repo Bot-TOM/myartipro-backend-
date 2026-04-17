@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from models.rappel import RappelCreate, RappelUpdate
 from utils.supabase_client import get_supabase_for_user
 from utils.auth import get_current_user
+from utils.profile import ensure_profile
 
 router = APIRouter()
 
@@ -27,6 +28,7 @@ async def create_rappel(
     current_user: dict = Depends(get_current_user),
 ):
     """Cree un nouveau rappel."""
+    ensure_profile(current_user["id"], current_user.get("email", ""))
     db = get_supabase_for_user(current_user["token"])
     rappel_data = {
         "user_id": current_user["id"],

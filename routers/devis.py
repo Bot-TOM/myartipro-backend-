@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from models.devis import DevisCreate, DevisUpdate
 from utils.supabase_client import get_supabase_for_user, get_supabase
 from utils.auth import get_current_user
+from utils.profile import ensure_profile
 from services.email_service import envoyer_devis_email
 from datetime import datetime, timezone
 
@@ -57,6 +58,7 @@ async def create_devis(
     current_user: dict = Depends(get_current_user),
 ):
     """Crée un nouveau devis avec numéro auto-généré."""
+    ensure_profile(current_user["id"], current_user.get("email", ""))
     db = get_supabase_for_user(current_user["token"])
     prestations = [p.model_dump() for p in data.prestations]
     montant_ht, montant_ttc = _calculer_montants(prestations, data.tva)
