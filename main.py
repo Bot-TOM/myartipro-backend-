@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
@@ -8,7 +8,6 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
-# Charge le .env depuis le dossier backend, puis depuis la racine
 env_path = Path(__file__).resolve().parent / ".env"
 load_dotenv(env_path)
 load_dotenv(env_path.parent / ".env")
@@ -45,7 +44,6 @@ app.include_router(rappels.router, prefix="/rappels", tags=["Rappels"])
 async def global_exception_handler(request, exc):
     import traceback
     traceback.print_exc()
-    from fastapi.responses import JSONResponse
     return JSONResponse(status_code=500, content={"detail": str(exc)})
 
 
@@ -54,15 +52,19 @@ async def root():
     return {"message": "MyArtipro API is running"}
 
 
-# === SCHEDULER : relances automatiques ===
-from apscheduler.schedulers.background import BackgroundScheduler
+# === SCHEDULER : relances automatiques (async) ===
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from services.relance_service import relancer_devis_sans_reponse
 
-scheduler = BackgroundScheduler()
+scheduler = AsyncIOScheduler()
 scheduler.add_job(relancer_devis_sans_reponse, "cron", hour=8, minute=0, id="relance_devis")
-scheduler.start()
+
+
+@app.on_event("startup")
+async def startup():
+    scheduler.start()
 
 
 @app.on_event("shutdown")
-def shutdown_scheduler():
+async def shutdown():
     scheduler.shutdown(wait=False)

@@ -8,25 +8,19 @@ router = APIRouter()
 
 
 @router.post("/checkout/{facture_id}")
-async def creer_lien_paiement(
-    facture_id: str,
-    current_user: dict = Depends(get_current_user),
-):
-    """Crée un lien de paiement Stripe pour une facture."""
+async def creer_lien_paiement(facture_id: str, current_user: dict = Depends(get_current_user)):
     db = get_supabase_for_user(current_user["token"])
 
-    facture = (
+    facture = (await (
         db.table("factures")
         .select("*, clients(nom, prenom, email)")
         .eq("id", facture_id)
         .eq("user_id", current_user["id"])
         .single()
         .execute()
-    ).data
-
+    )).data
     if not facture:
         raise HTTPException(status_code=404, detail="Facture non trouvée")
-
     if facture["statut"] == "payée":
         raise HTTPException(status_code=400, detail="Cette facture est déjà payée")
 
@@ -34,15 +28,13 @@ async def creer_lien_paiement(
     if not client or not client.get("email"):
         raise HTTPException(status_code=400, detail="Le client n'a pas d'adresse email")
 
-    # Récupérer le nom de l'artisan
-    artisan = (
+    artisan = (await (
         db.table("profiles")
         .select("nom, prenom, entreprise")
         .eq("id", current_user["id"])
         .single()
         .execute()
-    ).data
-
+    )).data
     artisan_nom = artisan.get("entreprise") or f"{artisan.get('prenom', '')} {artisan.get('nom', '')}".strip()
 
     try:
@@ -56,20 +48,14 @@ async def creer_lien_paiement(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur Stripe : {str(e)}")
 
-    # Sauvegarder l'URL dans la facture (optionnel, pour la partager)
-    db.table("factures").update(
-        {"stripe_checkout_url": checkout_url}
-    ).eq("id", facture_id).execute()
-
+    await db.table("factures").update({"stripe_checkout_url": checkout_url}).eq("id", facture_id).execute()
     return {"checkout_url": checkout_url}
 
 
 @router.post("/webhook")
 async def stripe_webhook(request: Request):
-    """Webhook Stripe — marque la facture comme payée après paiement réussi."""
     payload = await request.body()
     sig_header = request.headers.get("stripe-signature", "")
-
     try:
         event = verifier_webhook(payload, sig_header)
     except Exception:
@@ -78,10 +64,8 @@ async def stripe_webhook(request: Request):
     if event["type"] == "checkout.session.completed":
         session = event["data"]["object"]
         facture_id = session.get("metadata", {}).get("facture_id")
-
         if facture_id:
-            db = get_supabase()
-            db.table("factures").update({
+            await get_supabase().table("factures").update({
                 "statut": "payée",
                 "date_paiement": datetime.now().isoformat(),
             }).eq("id", facture_id).execute()

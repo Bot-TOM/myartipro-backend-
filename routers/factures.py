@@ -10,12 +10,10 @@ from datetime import datetime, timezone
 router = APIRouter()
 
 
-def _generer_numero_facture(user_id: str, token: str) -> str:
-    """Génère le prochain numéro de facture : FAC-2026-001."""
+async def _generer_numero_facture(user_id: str, token: str) -> str:
     year = datetime.now().year
     prefix = f"FAC-{year}-"
-
-    result = (
+    result = await (
         get_supabase_for_user(token).table("factures")
         .select("numero")
         .eq("user_id", user_id)
@@ -24,7 +22,6 @@ def _generer_numero_facture(user_id: str, token: str) -> str:
         .limit(1)
         .execute()
     )
-
     if result.data:
         last_num = int(result.data[0]["numero"].split("-")[-1])
         return f"{prefix}{last_num + 1:03d}"
@@ -33,10 +30,8 @@ def _generer_numero_facture(user_id: str, token: str) -> str:
 
 @router.get("")
 async def list_factures(current_user: dict = Depends(get_current_user)):
-    """Liste toutes les factures de l'utilisateur connecté."""
-    db = get_supabase_for_user(current_user["token"])
-    result = (
-        db.table("factures")
+    result = await (
+        get_supabase_for_user(current_user["token"]).table("factures")
         .select("*, clients(nom, prenom, email)")
         .eq("user_id", current_user["id"])
         .order("date_creation", desc=True)
@@ -46,44 +41,27 @@ async def list_factures(current_user: dict = Depends(get_current_user)):
 
 
 @router.post("/depuis-devis/{devis_id}", status_code=201)
-async def creer_facture_depuis_devis(
-    devis_id: str,
-    current_user: dict = Depends(get_current_user),
-):
-    """Convertit un devis accepté en facture."""
+async def creer_facture_depuis_devis(devis_id: str, current_user: dict = Depends(get_current_user)):
     db = get_supabase_for_user(current_user["token"])
 
-    # Récupérer le devis
-    devis = (
-        db.table("devis")
-        .select("*")
+    devis = (await (
+        db.table("devis").select("*")
         .eq("id", devis_id)
         .eq("user_id", current_user["id"])
         .single()
         .execute()
-    ).data
-
+    )).data
     if not devis:
         raise HTTPException(status_code=404, detail="Devis non trouvé")
-
     if devis["statut"] not in ("accepté", "envoyé", "relancé"):
-        raise HTTPException(status_code=400, detail="Le devis doit etre envoye, relance ou accepte pour etre converti en facture")
+        raise HTTPException(status_code=400, detail="Le devis doit être envoyé, relancé ou accepté")
 
-    # Vérifier qu'une facture n'existe pas déjà pour ce devis
-    existing = (
-        db.table("factures")
-        .select("id")
-        .eq("devis_id", devis_id)
-        .execute()
-    ).data
-
+    existing = (await db.table("factures").select("id").eq("devis_id", devis_id).execute()).data
     if existing:
         raise HTTPException(status_code=400, detail="Ce devis a déjà été converti en facture")
 
-    # Créer la facture
-    numero = _generer_numero_facture(current_user["id"], current_user["token"])
-
-    facture_data = {
+    numero = await _generer_numero_facture(current_user["id"], current_user["token"])
+    result = await db.table("factures").insert({
         "user_id": current_user["id"],
         "client_id": devis["client_id"],
         "devis_id": devis_id,
@@ -95,27 +73,18 @@ async def creer_facture_depuis_devis(
         "montant_ttc": float(devis["montant_ttc"]),
         "notes": devis.get("notes"),
         "date_echeance": None,
-    }
-
-    result = db.table("factures").insert(facture_data).execute()
+    }).execute()
     if not result.data:
         raise HTTPException(status_code=500, detail="Erreur lors de la création de la facture")
 
-    # Passer le devis en statut "facturé"
-    db.table("devis").update({"statut": "facturé"}).eq("id", devis_id).execute()
-
+    await db.table("devis").update({"statut": "facturé"}).eq("id", devis_id).execute()
     return result.data[0]
 
 
 @router.get("/{facture_id}")
-async def get_facture(
-    facture_id: str,
-    current_user: dict = Depends(get_current_user),
-):
-    """Récupère une facture par son ID."""
-    db = get_supabase_for_user(current_user["token"])
-    result = (
-        db.table("factures")
+async def get_facture(facture_id: str, current_user: dict = Depends(get_current_user)):
+    result = await (
+        get_supabase_for_user(current_user["token"]).table("factures")
         .select("*, clients(nom, prenom, email, telephone, adresse)")
         .eq("id", facture_id)
         .eq("user_id", current_user["id"])
@@ -128,19 +97,12 @@ async def get_facture(
 
 
 @router.put("/{facture_id}")
-async def update_facture(
-    facture_id: str,
-    data: FactureUpdate,
-    current_user: dict = Depends(get_current_user),
-):
-    """Met à jour une facture (statut, échéance, paiement, notes)."""
-    db = get_supabase_for_user(current_user["token"])
+async def update_facture(facture_id: str, data: FactureUpdate, current_user: dict = Depends(get_current_user)):
     update_data = data.model_dump(exclude_unset=True)
     if not update_data:
         raise HTTPException(status_code=400, detail="Aucune donnée à mettre à jour")
-
-    result = (
-        db.table("factures")
+    result = await (
+        get_supabase_for_user(current_user["token"]).table("factures")
         .update(update_data)
         .eq("id", facture_id)
         .eq("user_id", current_user["id"])
@@ -152,74 +114,31 @@ async def update_facture(
 
 
 @router.delete("/{facture_id}")
-async def delete_facture(
-    facture_id: str,
-    current_user: dict = Depends(get_current_user),
-):
-    """Supprime une facture."""
+async def delete_facture(facture_id: str, current_user: dict = Depends(get_current_user)):
     db = get_supabase_for_user(current_user["token"])
-    # Vérifier que la facture existe avant de supprimer
-    check = (
-        db.table("factures")
-        .select("id")
-        .eq("id", facture_id)
-        .eq("user_id", current_user["id"])
-        .execute()
-    )
+    check = await db.table("factures").select("id").eq("id", facture_id).eq("user_id", current_user["id"]).execute()
     if not check.data:
         raise HTTPException(status_code=404, detail="Facture non trouvée")
-
-    db.table("factures").delete().eq("id", facture_id).eq("user_id", current_user["id"]).execute()
+    await db.table("factures").delete().eq("id", facture_id).eq("user_id", current_user["id"]).execute()
     return {"message": "Facture supprimée"}
 
 
 @router.get("/export/csv")
 async def export_factures_csv(current_user: dict = Depends(get_current_user)):
-    """Exporte toutes les factures en CSV pour le comptable."""
-    db = get_supabase_for_user(current_user["token"])
-    result = (
-        db.table("factures")
+    result = await (
+        get_supabase_for_user(current_user["token"]).table("factures")
         .select("*, clients(nom, prenom)")
         .eq("user_id", current_user["id"])
         .order("date_creation", desc=False)
         .execute()
     )
-
     factures = result.data or []
-
     output = io.StringIO()
     writer = csv.writer(output, delimiter=';')
-
-    # En-tetes
-    writer.writerow([
-        'Numero', 'Client', 'Date creation', 'Date echeance',
-        'Date paiement', 'Montant HT', 'TVA %', 'Montant TTC',
-        'Statut', 'Notes'
-    ])
-
+    writer.writerow(['Numero', 'Client', 'Date creation', 'Date echeance', 'Date paiement', 'Montant HT', 'TVA %', 'Montant TTC', 'Statut', 'Notes'])
     for f in factures:
-        client_nom = ''
-        if f.get('clients'):
-            client_nom = f"{f['clients'].get('prenom', '')} {f['clients'].get('nom', '')}".strip()
-
-        writer.writerow([
-            f.get('numero', ''),
-            client_nom,
-            (f.get('date_creation') or '')[:10],
-            (f.get('date_echeance') or '')[:10],
-            (f.get('date_paiement') or '')[:10],
-            f.get('montant_ht', ''),
-            f.get('tva', ''),
-            f.get('montant_ttc', ''),
-            f.get('statut', ''),
-            f.get('notes', ''),
-        ])
-
+        client_nom = f"{f['clients'].get('prenom', '')} {f['clients'].get('nom', '')}".strip() if f.get('clients') else ''
+        writer.writerow([f.get('numero', ''), client_nom, (f.get('date_creation') or '')[:10], (f.get('date_echeance') or '')[:10], (f.get('date_paiement') or '')[:10], f.get('montant_ht', ''), f.get('tva', ''), f.get('montant_ttc', ''), f.get('statut', ''), f.get('notes', '')])
     output.seek(0)
     filename = f"factures_export_{datetime.now().strftime('%Y%m%d')}.csv"
-
-    return StreamingResponse(
-        iter([output.getvalue()]),
-        media_type="text/csv",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
+    return StreamingResponse(iter([output.getvalue()]), media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})

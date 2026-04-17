@@ -36,7 +36,6 @@ async def register(data: RegisterData):
     if not supabase_url or not service_key:
         raise HTTPException(status_code=500, detail="Supabase non configuré")
 
-    # 1. Créer l'utilisateur via Admin API Supabase
     async with httpx.AsyncClient(timeout=15) as client:
         resp = await client.post(
             f"{supabase_url}/auth/v1/admin/users",
@@ -48,7 +47,7 @@ async def register(data: RegisterData):
             json={
                 "email": data.email,
                 "password": data.password,
-                "email_confirm": True,  # Confirme l'email automatiquement
+                "email_confirm": True,
             },
         )
 
@@ -60,10 +59,9 @@ async def register(data: RegisterData):
     if not user_id:
         raise HTTPException(status_code=500, detail="Impossible de récupérer l'ID utilisateur")
 
-    # 2. Créer le profil via service role (pas de RLS)
     db = get_supabase()
     try:
-        db.table("profiles").insert({
+        await db.table("profiles").insert({
             "id": user_id,
             "email": data.email,
             "nom": data.nom,
@@ -100,9 +98,9 @@ class ProfileUpdate(BaseModel):
 
 @router.get("/me")
 async def get_profile(current_user: dict = Depends(get_current_user)):
-    """Récupère le profil de l'artisan connecté. Crée le profil s'il n'existe pas (auto-healing)."""
+    """Récupère le profil. Auto-crée le profil s'il est manquant (auto-healing)."""
     db_user = get_supabase_for_user(current_user["token"])
-    result = (
+    result = await (
         db_user.table("profiles")
         .select("*")
         .eq("id", current_user["id"])
@@ -110,15 +108,14 @@ async def get_profile(current_user: dict = Depends(get_current_user)):
         .execute()
     )
     if not result.data:
-        # Auto-création du profil manquant (utilisateurs créés avant le fix d'inscription)
         try:
-            get_supabase().table("profiles").insert({
+            await get_supabase().table("profiles").insert({
                 "id": current_user["id"],
                 "email": current_user.get("email", ""),
             }).execute()
         except Exception:
-            pass  # Peut déjà exister en race condition
-        result = (
+            pass
+        result = await (
             db_user.table("profiles")
             .select("*")
             .eq("id", current_user["id"])
@@ -140,7 +137,7 @@ async def update_profile(
     if not update_data:
         raise HTTPException(status_code=400, detail="Aucune donnée à mettre à jour")
 
-    result = (
+    result = await (
         get_supabase_for_user(current_user["token"]).table("profiles")
         .update(update_data)
         .eq("id", current_user["id"])
