@@ -1,11 +1,81 @@
 import re
+import os
+import httpx
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, field_validator
 from typing import Optional
-from utils.supabase_client import get_supabase_for_user
+from utils.supabase_client import get_supabase_for_user, get_supabase
 from utils.auth import get_current_user
 
 router = APIRouter()
+
+
+class RegisterData(BaseModel):
+    email: str
+    password: str
+    nom: str
+    prenom: str
+    entreprise: Optional[str] = None
+    siret: Optional[str] = None
+    telephone: Optional[str] = None
+
+    @field_validator("siret")
+    @classmethod
+    def valider_siret(cls, v):
+        if v and not re.match(r"^\d{14}$", v):
+            raise ValueError("Le SIRET doit contenir exactement 14 chiffres")
+        return v
+
+
+@router.post("/register", status_code=201)
+async def register(data: RegisterData):
+    """Crée un compte artisan + profil via service role (bypass RLS)."""
+    supabase_url = os.getenv("SUPABASE_URL", "")
+    service_key = os.getenv("SUPABASE_SERVICE_KEY", "")
+
+    if not supabase_url or not service_key:
+        raise HTTPException(status_code=500, detail="Supabase non configuré")
+
+    # 1. Créer l'utilisateur via Admin API Supabase
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.post(
+            f"{supabase_url}/auth/v1/admin/users",
+            headers={
+                "apikey": service_key,
+                "Authorization": f"Bearer {service_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "email": data.email,
+                "password": data.password,
+                "email_confirm": True,  # Confirme l'email automatiquement
+            },
+        )
+
+    if resp.status_code not in (200, 201):
+        detail = resp.json().get("msg") or resp.json().get("message") or "Erreur lors de la création du compte"
+        raise HTTPException(status_code=400, detail=detail)
+
+    user_id = resp.json().get("id")
+    if not user_id:
+        raise HTTPException(status_code=500, detail="Impossible de récupérer l'ID utilisateur")
+
+    # 2. Créer le profil via service role (pas de RLS)
+    db = get_supabase()
+    try:
+        db.table("profiles").insert({
+            "id": user_id,
+            "email": data.email,
+            "nom": data.nom,
+            "prenom": data.prenom,
+            "entreprise": data.entreprise or None,
+            "siret": data.siret or None,
+            "telephone": data.telephone or None,
+        }).execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Compte créé mais erreur profil : {str(e)}")
+
+    return {"message": "Compte créé avec succès", "user_id": user_id}
 
 
 class ProfileUpdate(BaseModel):

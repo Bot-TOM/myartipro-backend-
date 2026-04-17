@@ -76,9 +76,14 @@ class TableQuery:
         self._params[column] = f"is.{value}"
         return self
 
-    def order(self, column: str, *, desc: bool = False):
+    def order(self, column: str, *, desc: bool = False, nullsfirst: bool = True):
         direction = "desc" if desc else "asc"
-        self._params["order"] = f"{column}.{direction}"
+        nulls = "nullsfirst" if nullsfirst else "nullslast"
+        new_order = f"{column}.{direction}.{nulls}"
+        if "order" in self._params:
+            self._params["order"] = f"{self._params['order']},{new_order}"
+        else:
+            self._params["order"] = new_order
         return self
 
     def limit(self, count: int):
