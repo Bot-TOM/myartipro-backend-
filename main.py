@@ -1,4 +1,5 @@
 import os
+import asyncio
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -48,19 +49,21 @@ async def root():
     return {"message": "MyArtipro API is running"}
 
 
-# === SCHEDULER : relances automatiques (async) ===
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
+# === SCHEDULER : relances automatiques ===
+from apscheduler.schedulers.background import BackgroundScheduler
 from services.relance_service import relancer_devis_sans_reponse
 
-scheduler = AsyncIOScheduler()
-scheduler.add_job(relancer_devis_sans_reponse, "cron", hour=8, minute=0, id="relance_devis")
+
+def _run_relances():
+    """Wrapper sync → async pour le scheduler (thread séparé)."""
+    asyncio.run(relancer_devis_sans_reponse())
 
 
-@app.on_event("startup")
-async def startup():
-    scheduler.start()
+scheduler = BackgroundScheduler()
+scheduler.add_job(_run_relances, "cron", hour=8, minute=0, id="relance_devis")
+scheduler.start()
 
 
 @app.on_event("shutdown")
-async def shutdown():
+def shutdown():
     scheduler.shutdown(wait=False)
