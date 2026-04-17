@@ -10,7 +10,7 @@ SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
 
 
 class SupabaseDB:
-    """Client Supabase REST léger — async, compatible clés sb_* et eyJ*."""
+    """Client Supabase REST léger."""
 
     def __init__(self, url: str, key: str):
         self.base_url = f"{url}/rest/v1"
@@ -95,20 +95,20 @@ class TableQuery:
         self.headers["Accept"] = "application/vnd.pgrst.object+json"
         return self
 
-    async def execute(self) -> "_Result":
-        async with httpx.AsyncClient(verify=True, timeout=10) as client:
+    def execute(self) -> "_Result":
+        with httpx.Client(verify=True, timeout=10) as client:
             if self._method == "GET":
-                resp = await client.get(self.url, headers=self.headers, params=self._params)
+                resp = client.get(self.url, headers=self.headers, params=self._params)
             elif self._method == "HEAD":
-                resp = await client.head(self.url, headers=self.headers, params=self._params)
+                resp = client.head(self.url, headers=self.headers, params=self._params)
                 count = resp.headers.get("content-range", "").split("/")[-1]
                 return _Result(data=[], count=int(count) if count and count != "*" else 0)
             elif self._method == "POST":
-                resp = await client.post(self.url, headers=self.headers, params=self._params, json=self._body)
+                resp = client.post(self.url, headers=self.headers, params=self._params, json=self._body)
             elif self._method == "PATCH":
-                resp = await client.patch(self.url, headers=self.headers, params=self._params, json=self._body)
+                resp = client.patch(self.url, headers=self.headers, params=self._params, json=self._body)
             elif self._method == "DELETE":
-                resp = await client.delete(self.url, headers=self.headers, params=self._params)
+                resp = client.delete(self.url, headers=self.headers, params=self._params)
             else:
                 raise ValueError(f"Unknown method: {self._method}")
 
@@ -129,16 +129,16 @@ class _Result:
 
 
 def get_supabase() -> SupabaseDB:
-    """Client service_role — opérations admin, bypass RLS."""
+    """Client service_role — bypass RLS."""
     if not SUPABASE_URL or "xxxx" in SUPABASE_URL:
-        raise RuntimeError("Supabase non configuré. Remplis SUPABASE_URL et SUPABASE_KEY dans .env")
+        raise RuntimeError("Supabase non configuré.")
     return SupabaseDB(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 
 def get_supabase_for_user(user_token: str) -> SupabaseDB:
     """Client anon + JWT utilisateur — RLS actif."""
     if not SUPABASE_URL or not SUPABASE_KEY:
-        raise RuntimeError("Supabase non configuré. Remplis SUPABASE_URL et SUPABASE_KEY dans .env")
+        raise RuntimeError("Supabase non configuré.")
     db = SupabaseDB(SUPABASE_URL, SUPABASE_KEY)
     db.headers["Authorization"] = f"Bearer {user_token}"
     return db

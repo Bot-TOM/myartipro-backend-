@@ -1,4 +1,4 @@
-"""Service de relance automatique des devis sans réponse (async)."""
+"""Service de relance automatique des devis sans réponse."""
 
 from datetime import datetime, timedelta, timezone
 from utils.supabase_client import get_supabase
@@ -7,7 +7,7 @@ from services.email_service import envoyer_relance_email
 DELAI_RELANCE_JOURS = 3
 
 
-async def relancer_devis_sans_reponse():
+def relancer_devis_sans_reponse():
     """Relance les devis envoyés depuis +3 jours sans réponse.
 
     - Statut 'envoyé' uniquement → passe à 'relancé' après envoi
@@ -17,7 +17,7 @@ async def relancer_devis_sans_reponse():
     db = get_supabase()
     seuil = (datetime.now(timezone.utc) - timedelta(days=DELAI_RELANCE_JOURS)).isoformat()
 
-    result = await (
+    result = (
         db.table("devis")
         .select("id, numero, titre, user_id, date_envoi, clients(nom, prenom, email)")
         .eq("statut", "envoyé")
@@ -32,13 +32,13 @@ async def relancer_devis_sans_reponse():
         if not client or not client.get("email"):
             continue
 
-        artisan = (await (
+        artisan = (
             db.table("profiles")
             .select("nom, prenom, entreprise")
             .eq("id", devis["user_id"])
             .single()
             .execute()
-        )).data
+        ).data
         if not artisan:
             continue
 
@@ -55,7 +55,7 @@ async def relancer_devis_sans_reponse():
                 devis_numero=devis["numero"],
                 jours_depuis_envoi=jours,
             )
-            await db.table("devis").update({
+            db.table("devis").update({
                 "statut": "relancé",
                 "date_relance": datetime.now(timezone.utc).isoformat(),
             }).eq("id", devis["id"]).execute()

@@ -9,9 +9,9 @@ router = APIRouter()
 _PROFIL_VIDE = {"nom": "", "prenom": "", "entreprise": "", "siret": "", "telephone": "", "adresse": "", "email": ""}
 
 
-async def _get_artisan(db, user_id: str) -> dict:
+def _get_artisan(db, user_id: str) -> dict:
     try:
-        result = await db.table("profiles").select("*").eq("id", user_id).execute()
+        result = db.table("profiles").select("*").eq("id", user_id).execute()
         if result.data:
             return result.data[0]
     except Exception:
@@ -24,7 +24,7 @@ async def public_devis_pdf(devis_id: str):
     from services.pdf_service import generer_pdf_devis
     db = get_supabase()
     try:
-        result = await db.table("devis").select("*, clients(nom, prenom, email, telephone, adresse)").eq("id", devis_id).execute()
+        result = db.table("devis").select("*, clients(nom, prenom, email, telephone, adresse)").eq("id", devis_id).execute()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur DB devis: {str(e)}")
 
@@ -35,7 +35,7 @@ async def public_devis_pdf(devis_id: str):
     if devis.get("statut") not in ("envoyé", "relancé", "accepté", "facturé"):
         raise HTTPException(status_code=403, detail="Ce devis n'est pas accessible")
 
-    artisan = await _get_artisan(db, devis["user_id"])
+    artisan = _get_artisan(db, devis["user_id"])
     try:
         pdf_bytes = bytes(generer_pdf_devis(devis, devis.get("clients") or {}, artisan))
     except Exception as e:
@@ -51,7 +51,7 @@ async def download_facture_pdf(facture_id: str, current_user: dict = Depends(get
     from services.pdf_service import generer_pdf_facture
     db = get_supabase_for_user(current_user["token"])
     try:
-        result = await db.table("factures").select("*, clients(nom, prenom, email, telephone, adresse)").eq("id", facture_id).eq("user_id", current_user["id"]).execute()
+        result = db.table("factures").select("*, clients(nom, prenom, email, telephone, adresse)").eq("id", facture_id).eq("user_id", current_user["id"]).execute()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur DB facture: {str(e)}")
 
@@ -59,7 +59,7 @@ async def download_facture_pdf(facture_id: str, current_user: dict = Depends(get
         raise HTTPException(status_code=404, detail="Facture non trouvée")
 
     facture = result.data[0]
-    artisan = await _get_artisan(db, current_user["id"])
+    artisan = _get_artisan(db, current_user["id"])
     try:
         pdf_bytes = bytes(generer_pdf_facture(facture, facture.get("clients") or {}, artisan))
     except Exception as e:
@@ -75,7 +75,7 @@ async def download_devis_pdf(devis_id: str, current_user: dict = Depends(get_cur
     from services.pdf_service import generer_pdf_devis
     db = get_supabase_for_user(current_user["token"])
     try:
-        result = await db.table("devis").select("*, clients(nom, prenom, email, telephone, adresse)").eq("id", devis_id).eq("user_id", current_user["id"]).execute()
+        result = db.table("devis").select("*, clients(nom, prenom, email, telephone, adresse)").eq("id", devis_id).eq("user_id", current_user["id"]).execute()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur DB devis: {str(e)}")
 
@@ -83,7 +83,7 @@ async def download_devis_pdf(devis_id: str, current_user: dict = Depends(get_cur
         raise HTTPException(status_code=404, detail="Devis non trouvé")
 
     devis = result.data[0]
-    artisan = await _get_artisan(db, current_user["id"])
+    artisan = _get_artisan(db, current_user["id"])
     try:
         pdf_bytes = bytes(generer_pdf_devis(devis, devis.get("clients") or {}, artisan))
     except Exception as e:

@@ -39,36 +39,22 @@ async def register(data: RegisterData):
     async with httpx.AsyncClient(timeout=15) as client:
         resp = await client.post(
             f"{supabase_url}/auth/v1/admin/users",
-            headers={
-                "apikey": service_key,
-                "Authorization": f"Bearer {service_key}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "email": data.email,
-                "password": data.password,
-                "email_confirm": True,
-            },
+            headers={"apikey": service_key, "Authorization": f"Bearer {service_key}", "Content-Type": "application/json"},
+            json={"email": data.email, "password": data.password, "email_confirm": True},
         )
 
     if resp.status_code not in (200, 201):
-        detail = resp.json().get("msg") or resp.json().get("message") or "Erreur lors de la création du compte"
+        detail = resp.json().get("msg") or resp.json().get("message") or "Erreur création compte"
         raise HTTPException(status_code=400, detail=detail)
 
     user_id = resp.json().get("id")
     if not user_id:
         raise HTTPException(status_code=500, detail="Impossible de récupérer l'ID utilisateur")
 
-    db = get_supabase()
     try:
-        await db.table("profiles").insert({
-            "id": user_id,
-            "email": data.email,
-            "nom": data.nom,
-            "prenom": data.prenom,
-            "entreprise": data.entreprise or None,
-            "siret": data.siret or None,
-            "telephone": data.telephone or None,
+        get_supabase().table("profiles").insert({
+            "id": user_id, "email": data.email, "nom": data.nom, "prenom": data.prenom,
+            "entreprise": data.entreprise or None, "siret": data.siret or None, "telephone": data.telephone or None,
         }).execute()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Compte créé mais erreur profil : {str(e)}")
@@ -98,51 +84,29 @@ class ProfileUpdate(BaseModel):
 
 @router.get("/me")
 async def get_profile(current_user: dict = Depends(get_current_user)):
-    """Récupère le profil. Auto-crée le profil s'il est manquant (auto-healing)."""
+    """Récupère le profil. Auto-crée si manquant (auto-healing FK)."""
     db_user = get_supabase_for_user(current_user["token"])
-    result = await (
-        db_user.table("profiles")
-        .select("*")
-        .eq("id", current_user["id"])
-        .single()
-        .execute()
-    )
+    result = db_user.table("profiles").select("*").eq("id", current_user["id"]).single().execute()
     if not result.data:
         try:
-            await get_supabase().table("profiles").insert({
+            get_supabase().table("profiles").insert({
                 "id": current_user["id"],
                 "email": current_user.get("email", ""),
             }).execute()
         except Exception:
             pass
-        result = await (
-            db_user.table("profiles")
-            .select("*")
-            .eq("id", current_user["id"])
-            .single()
-            .execute()
-        )
+        result = db_user.table("profiles").select("*").eq("id", current_user["id"]).single().execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="Profil non trouvé")
     return result.data
 
 
 @router.put("/me")
-async def update_profile(
-    data: ProfileUpdate,
-    current_user: dict = Depends(get_current_user),
-):
-    """Met à jour le profil de l'artisan connecté."""
+async def update_profile(data: ProfileUpdate, current_user: dict = Depends(get_current_user)):
     update_data = data.model_dump(exclude_unset=True)
     if not update_data:
         raise HTTPException(status_code=400, detail="Aucune donnée à mettre à jour")
-
-    result = await (
-        get_supabase_for_user(current_user["token"]).table("profiles")
-        .update(update_data)
-        .eq("id", current_user["id"])
-        .execute()
-    )
+    result = get_supabase_for_user(current_user["token"]).table("profiles").update(update_data).eq("id", current_user["id"]).execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="Profil non trouvé")
     return result.data[0]

@@ -1,5 +1,4 @@
 import os
-import asyncio
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -55,8 +54,7 @@ from services.relance_service import relancer_devis_sans_reponse
 
 
 def _run_relances():
-    """Wrapper sync → async pour le scheduler (thread séparé)."""
-    asyncio.run(relancer_devis_sans_reponse())
+    relancer_devis_sans_reponse()
 
 
 scheduler = BackgroundScheduler()
