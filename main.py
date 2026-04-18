@@ -1,4 +1,5 @@
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,14 +8,44 @@ from dotenv import load_dotenv
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 
 env_path = Path(__file__).resolve().parent / ".env"
 load_dotenv(env_path)
 
 from routers import auth, clients, devis, pdf, factures, stripe_routes, rappels
+from services.relance_service import relancer_devis_sans_reponse
+
+scheduler = AsyncIOScheduler(timezone="Europe/Paris")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    try:
+        scheduler.add_job(
+            relancer_devis_sans_reponse,
+            CronTrigger(hour=9, minute=0),
+            id="relance_devis",
+            replace_existing=True,
+            misfire_grace_time=3600,
+        )
+        scheduler.start()
+        print("[scheduler] démarré — relance quotidienne 09:00 Europe/Paris")
+    except Exception as e:
+        print(f"[scheduler] erreur démarrage: {e}")
+    try:
+        yield
+    finally:
+        try:
+            scheduler.shutdown(wait=False)
+            print("[scheduler] arrêté")
+        except Exception as e:
+            print(f"[scheduler] erreur arrêt: {e}")
+
 
 limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
-app = FastAPI(title="MyArtipro API", version="1.0.0")
+app = FastAPI(title="MyArtipro API", version="1.0.0", lifespan=lifespan)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
