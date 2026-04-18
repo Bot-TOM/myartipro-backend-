@@ -1,19 +1,15 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
 
 
 class Prestation(BaseModel):
-    model_config = ConfigDict(strict=True)
-
     description: str
     quantite: float = 1.0
     prix_unitaire: float
 
 
 class DevisCreate(BaseModel):
-    model_config = ConfigDict(strict=True)
-
     client_id: str
     titre: str
     prestations: List[Prestation]
