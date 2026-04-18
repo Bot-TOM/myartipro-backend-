@@ -29,7 +29,6 @@ class RegisterData(BaseModel):
 
 @router.post("/register", status_code=201)
 async def register(data: RegisterData):
-    """Crée un compte artisan + profil via service role (bypass RLS)."""
     supabase_url = os.getenv("SUPABASE_URL", "")
     service_key = os.getenv("SUPABASE_SERVICE_KEY", "")
 
@@ -52,7 +51,7 @@ async def register(data: RegisterData):
         raise HTTPException(status_code=500, detail="Impossible de récupérer l'ID utilisateur")
 
     try:
-        get_supabase().table("profiles").insert({
+        await get_supabase().table("profiles").insert({
             "id": user_id, "email": data.email, "nom": data.nom, "prenom": data.prenom,
             "entreprise": data.entreprise or None, "siret": data.siret or None, "telephone": data.telephone or None,
         }).execute()
@@ -84,18 +83,17 @@ class ProfileUpdate(BaseModel):
 
 @router.get("/me")
 async def get_profile(current_user: dict = Depends(get_current_user)):
-    """Récupère le profil. Auto-crée si manquant (auto-healing FK)."""
     db_user = get_supabase_for_user(current_user["token"])
-    result = db_user.table("profiles").select("*").eq("id", current_user["id"]).single().execute()
+    result = await db_user.table("profiles").select("*").eq("id", current_user["id"]).single().execute()
     if not result.data:
         try:
-            get_supabase().table("profiles").insert({
+            await get_supabase().table("profiles").insert({
                 "id": current_user["id"],
                 "email": current_user.get("email", ""),
             }).execute()
         except Exception:
             pass
-        result = db_user.table("profiles").select("*").eq("id", current_user["id"]).single().execute()
+        result = await db_user.table("profiles").select("*").eq("id", current_user["id"]).single().execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="Profil non trouvé")
     return result.data
@@ -106,7 +104,7 @@ async def update_profile(data: ProfileUpdate, current_user: dict = Depends(get_c
     update_data = data.model_dump(exclude_unset=True)
     if not update_data:
         raise HTTPException(status_code=400, detail="Aucune donnée à mettre à jour")
-    result = get_supabase_for_user(current_user["token"]).table("profiles").update(update_data).eq("id", current_user["id"]).execute()
+    result = await get_supabase_for_user(current_user["token"]).table("profiles").update(update_data).eq("id", current_user["id"]).execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="Profil non trouvé")
     return result.data[0]

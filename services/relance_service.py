@@ -7,17 +7,12 @@ from services.email_service import envoyer_relance_email
 DELAI_RELANCE_JOURS = 3
 
 
-def relancer_devis_sans_reponse():
-    """Relance les devis envoyés depuis +3 jours sans réponse.
-
-    - Statut 'envoyé' uniquement → passe à 'relancé' après envoi
-    - Ignoré si le client n'a pas d'email
-    """
+async def relancer_devis_sans_reponse():
     print(f"[Relance] Démarrage — {datetime.now()}")
     db = get_supabase()
     seuil = (datetime.now(timezone.utc) - timedelta(days=DELAI_RELANCE_JOURS)).isoformat()
 
-    result = (
+    result = await (
         db.table("devis")
         .select("id, numero, titre, user_id, date_envoi, clients(nom, prenom, email)")
         .eq("statut", "envoyé")
@@ -32,13 +27,13 @@ def relancer_devis_sans_reponse():
         if not client or not client.get("email"):
             continue
 
-        artisan = (
+        artisan = (await (
             db.table("profiles")
             .select("nom, prenom, entreprise")
             .eq("id", devis["user_id"])
             .single()
             .execute()
-        ).data
+        )).data
         if not artisan:
             continue
 
@@ -55,7 +50,7 @@ def relancer_devis_sans_reponse():
                 devis_numero=devis["numero"],
                 jours_depuis_envoi=jours,
             )
-            db.table("devis").update({
+            await db.table("devis").update({
                 "statut": "relancé",
                 "date_relance": datetime.now(timezone.utc).isoformat(),
             }).eq("id", devis["id"]).execute()

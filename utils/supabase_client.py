@@ -1,4 +1,5 @@
 import os
+import asyncio
 import httpx
 from dotenv import load_dotenv
 
@@ -95,8 +96,11 @@ class TableQuery:
         self.headers["Accept"] = "application/vnd.pgrst.object+json"
         return self
 
-    def execute(self) -> "_Result":
-        with httpx.Client(verify=True, timeout=10) as client:
+    async def execute(self) -> "_Result":
+        return await asyncio.to_thread(self._execute_sync)
+
+    def _execute_sync(self) -> "_Result":
+        with httpx.Client(verify=True, timeout=15) as client:
             if self._method == "GET":
                 resp = client.get(self.url, headers=self.headers, params=self._params)
             elif self._method == "HEAD":
