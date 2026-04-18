@@ -103,3 +103,133 @@ def envoyer_relance_email(
     except Exception as e:
         print(f"[Email] ERREUR relance {devis_numero} a {client_email}: {e}")
         raise Exception(f"Echec envoi relance: {str(e)}")
+
+
+# ---------------------------------------------------------------------------
+# Relances factures impayées (paliers J+30, J+45, J+60)
+# ---------------------------------------------------------------------------
+
+_RELANCE_FACTURE_PALIERS = {
+    1: {
+        "ton": "cordial",
+        "objet": "Rappel",
+        "intro": (
+            "Sauf erreur de notre part, nous n'avons pas encore recu le reglement "
+            "de la facture <strong>{numero}</strong>, emise il y a {jours} jours."
+        ),
+        "conclusion": (
+            "Peut-etre s'agit-il d'un oubli. Nous vous remercions par avance de "
+            "proceder au reglement."
+        ),
+        "mention_legale": "",
+    },
+    2: {
+        "ton": "ferme",
+        "objet": "2e rappel",
+        "intro": (
+            "Malgre notre precedent rappel, nous n'avons toujours pas recu le "
+            "reglement de la facture <strong>{numero}</strong>, emise il y a "
+            "{jours} jours."
+        ),
+        "conclusion": (
+            "Nous vous remercions de regulariser sous les meilleurs delais."
+        ),
+        "mention_legale": "",
+    },
+    3: {
+        "ton": "mise_en_demeure",
+        "objet": "Mise en demeure",
+        "intro": (
+            "La facture <strong>{numero}</strong>, emise il y a {jours} jours, "
+            "demeure impayee malgre nos rappels."
+        ),
+        "conclusion": (
+            "A defaut de reglement sous 8 jours, des penalites de retard seront "
+            "appliquees au taux de 3 fois le taux d'interet legal en vigueur, "
+            "ainsi qu'une indemnite forfaitaire de 40 EUR pour frais de "
+            "recouvrement (art. L441-10 du Code de commerce)."
+        ),
+        "mention_legale": (
+            "La presente vaut mise en demeure amiable avant toute procedure de "
+            "recouvrement."
+        ),
+    },
+}
+
+
+def envoyer_relance_facture_email(
+    client_email: str,
+    client_nom: str,
+    artisan_nom: str,
+    facture_numero: str,
+    montant_ttc: float,
+    jours_depuis_emission: int,
+    palier: int,
+    lien_paiement: str = "",
+):
+    """
+    Envoie une relance facture impayee.
+
+    palier ∈ {1, 2, 3} :
+      - 1 : J+30, ton cordial
+      - 2 : J+45, ton ferme
+      - 3 : J+60, mise en demeure amiable (art. L441-10)
+    """
+    if palier not in _RELANCE_FACTURE_PALIERS:
+        raise ValueError(f"Palier invalide: {palier}")
+
+    cfg = _RELANCE_FACTURE_PALIERS[palier]
+    _init_resend()
+
+    montant_str = f"{montant_ttc:.2f} EUR TTC".replace(".", ",")
+    intro = cfg["intro"].format(numero=facture_numero, jours=jours_depuis_emission)
+    mention = (
+        f'<p style="font-size:13px;color:#999;font-style:italic">{cfg["mention_legale"]}</p>'
+        if cfg["mention_legale"] else ""
+    )
+    bouton_paiement = (
+        f"""<p style="margin:24px 0">
+        <a href="{lien_paiement}"
+           style="background:#2563eb;color:#fff;padding:12px 28px;
+                  text-decoration:none;border-radius:6px;font-weight:bold">
+            Regler en ligne
+        </a>
+    </p>"""
+        if lien_paiement else
+        '<p>Merci de nous contacter pour proceder au reglement.</p>'
+    )
+
+    sujet = f"{cfg['objet']} — Facture {facture_numero} ({artisan_nom})"
+
+    try:
+        result = resend.Emails.send(
+            {
+                "from": os.getenv("EMAIL_FROM", "MyArtipro <onboarding@resend.dev>"),
+                "to": client_email,
+                "subject": sujet,
+                "html": f"""
+<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px">
+    <h2 style="color:#2563eb">Bonjour {client_nom},</h2>
+    <p>{intro}</p>
+    <p><strong>Montant du :</strong> {montant_str}</p>
+    {bouton_paiement}
+    <p>{cfg['conclusion']}</p>
+    {mention}
+    <p>Cordialement,<br><strong>{artisan_nom}</strong></p>
+    <hr style="border:none;border-top:1px solid #eee;margin:24px 0">
+    <p style="font-size:12px;color:#999">Envoye via MyArtipro</p>
+</div>
+                """,
+            }
+        )
+        print(
+            f"[Email] Relance facture P{palier} {facture_numero} "
+            f"envoyee a {client_email} — ID: {result}"
+        )
+        return result
+    except Exception as e:
+        print(
+            f"[Email] ERREUR relance facture P{palier} {facture_numero} "
+            f"a {client_email}: {e}"
+        )
+        raise Exception(f"Echec envoi relance facture: {str(e)}")
