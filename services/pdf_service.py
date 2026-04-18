@@ -68,12 +68,13 @@ class DevisPDF(FPDF):
         siret = f" - SIRET {self.artisan['siret']}" if self.artisan.get("siret") else ""
         self.cell(0, 4, _safe(f"{nom}{siret}"), align="C", new_x="LMARGIN", new_y="NEXT")
 
-        # Note TVA franchise : valide pour auto-entrepreneur non assujetti
-        self.cell(
-            0, 4,
-            _safe("TVA non applicable, art. 293 B du CGI"),
-            align="C",
-        )
+        # Mention TVA franchise uniquement si l'artisan n'est pas au régime réel
+        if self.artisan.get("regime_tva", "franchise") != "reel":
+            self.cell(
+                0, 4,
+                _safe("TVA non applicable, art. 293 B du CGI"),
+                align="C",
+            )
 
 
 def _safe(text: str) -> str:

@@ -73,6 +73,14 @@ class ProfileUpdate(BaseModel):
     moyens_paiement: Optional[list[str]] = None
     instructions_paiement: Optional[str] = None
     onboarding_done: Optional[bool] = None
+    regime_tva: Optional[str] = None
+
+    @field_validator("regime_tva")
+    @classmethod
+    def valider_regime_tva(cls, v):
+        if v is not None and v not in ("franchise", "reel"):
+            raise ValueError("regime_tva doit être 'franchise' ou 'reel'")
+        return v
 
     @field_validator("siret")
     @classmethod
