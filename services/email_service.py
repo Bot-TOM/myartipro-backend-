@@ -9,6 +9,49 @@ def _init_resend():
     resend.api_key = api_key
 
 
+def _from_with_artisan(artisan_nom: str) -> str:
+    """
+    Construit l'en-tête "From" affiche par le client.
+    Format : "{Nom Artisan} via MyArtipro <contact@myartipro.fr>"
+    Respecte EMAIL_FROM en fallback si variable non definie.
+    """
+    base = os.getenv("EMAIL_FROM", "MyArtipro <onboarding@resend.dev>")
+    # Si EMAIL_FROM contient deja un format "Nom <adresse>", on en extrait l'adresse.
+    if "<" in base and ">" in base:
+        adresse = base.split("<", 1)[1].rsplit(">", 1)[0]
+    else:
+        adresse = base
+    nom = (artisan_nom or "").strip() or "MyArtipro"
+    # Echappe les guillemets pour rester un header RFC 5322 valide.
+    nom_safe = nom.replace('"', '')
+    return f'"{nom_safe} via MyArtipro" <{adresse}>'
+
+
+def _signature_html(
+    artisan_nom: str,
+    artisan_email: str = "",
+    artisan_telephone: str = "",
+) -> str:
+    """Bloc signature HTML injecte en fin de chaque email."""
+    lignes = [f"<strong>{artisan_nom}</strong>"]
+    if artisan_telephone:
+        lignes.append(f'Tel. : <a href="tel:{artisan_telephone}" style="color:#374151;text-decoration:none">{artisan_telephone}</a>')
+    if artisan_email:
+        lignes.append(f'Email : <a href="mailto:{artisan_email}" style="color:#374151;text-decoration:none">{artisan_email}</a>')
+    return (
+        '<p style="margin:16px 0 0 0;line-height:1.5">Cordialement,<br>'
+        + "<br>".join(lignes)
+        + "</p>"
+    )
+
+
+def _send(payload: dict, reply_to: str = ""):
+    """Envoi Resend avec reply_to optionnel."""
+    if reply_to:
+        payload["reply_to"] = reply_to
+    return resend.Emails.send(payload)
+
+
 def envoyer_devis_email(
     client_email: str,
     client_nom: str,
@@ -16,6 +59,8 @@ def envoyer_devis_email(
     devis_numero: str,
     devis_id: str,
     acceptance_token: str = "",
+    artisan_email: str = "",
+    artisan_telephone: str = "",
 ):
     """Envoie un email au client avec le lien vers le devis + boutons accepter/refuser."""
     _init_resend()
@@ -23,11 +68,12 @@ def envoyer_devis_email(
     app_url = os.getenv("APP_URL", "http://localhost:5173")
     pdf_link = f"{api_url}/pdf/public/devis/{devis_id}"
     accept_link = f"{app_url}/devis/public/{acceptance_token}" if acceptance_token else pdf_link
+    signature = _signature_html(artisan_nom, artisan_email, artisan_telephone)
 
     try:
-        result = resend.Emails.send(
+        result = _send(
             {
-                "from": os.getenv("EMAIL_FROM", "MyArtipro <onboarding@resend.dev>"),
+                "from": _from_with_artisan(artisan_nom),
                 "to": client_email,
                 "subject": f"Devis {devis_numero} — {artisan_nom}",
                 "html": f"""
@@ -49,14 +95,13 @@ def envoyer_devis_email(
         </a>
     </p>
     <p>N'hesitez pas a repondre a cet email pour toute question.</p>
-    <p>Cordialement,<br><strong>{artisan_nom}</strong></p>
+    {signature}
     <hr style="border:none;border-top:1px solid #eee;margin:24px 0">
-    <p style="font-size:12px;color:#999">
-        Envoye via MyArtipro
-    </p>
+    <p style="font-size:12px;color:#999">Envoye via MyArtipro</p>
 </div>
                 """,
-            }
+            },
+            reply_to=artisan_email,
         )
         print(f"[Email] Devis {devis_numero} envoye a {client_email} — ID: {result}")
         return result
@@ -71,14 +116,17 @@ def envoyer_relance_email(
     artisan_nom: str,
     devis_numero: str,
     jours_depuis_envoi: int,
+    artisan_email: str = "",
+    artisan_telephone: str = "",
 ):
     """Envoie un email de relance pour un devis sans reponse."""
     _init_resend()
+    signature = _signature_html(artisan_nom, artisan_email, artisan_telephone)
 
     try:
-        result = resend.Emails.send(
+        result = _send(
             {
-                "from": os.getenv("EMAIL_FROM", "MyArtipro <onboarding@resend.dev>"),
+                "from": _from_with_artisan(artisan_nom),
                 "to": client_email,
                 "subject": f"Relance — Devis {devis_numero} ({artisan_nom})",
                 "html": f"""
@@ -89,14 +137,13 @@ def envoyer_relance_email(
     par {artisan_nom}.</p>
     <p>Si vous avez des questions ou souhaitez y donner suite,
     n'hesitez pas a nous contacter.</p>
-    <p>Cordialement,<br><strong>{artisan_nom}</strong></p>
+    {signature}
     <hr style="border:none;border-top:1px solid #eee;margin:24px 0">
-    <p style="font-size:12px;color:#999">
-        Envoye via MyArtipro
-    </p>
+    <p style="font-size:12px;color:#999">Envoye via MyArtipro</p>
 </div>
                 """,
-            }
+            },
+            reply_to=artisan_email,
         )
         print(f"[Email] Relance {devis_numero} envoyee a {client_email} — ID: {result}")
         return result
@@ -166,6 +213,8 @@ def envoyer_relance_facture_email(
     jours_depuis_emission: int,
     palier: int,
     lien_paiement: str = "",
+    artisan_email: str = "",
+    artisan_telephone: str = "",
 ):
     """
     Envoie une relance facture impayee.
@@ -200,11 +249,12 @@ def envoyer_relance_facture_email(
     )
 
     sujet = f"{cfg['objet']} — Facture {facture_numero} ({artisan_nom})"
+    signature = _signature_html(artisan_nom, artisan_email, artisan_telephone)
 
     try:
-        result = resend.Emails.send(
+        result = _send(
             {
-                "from": os.getenv("EMAIL_FROM", "MyArtipro <onboarding@resend.dev>"),
+                "from": _from_with_artisan(artisan_nom),
                 "to": client_email,
                 "subject": sujet,
                 "html": f"""
@@ -215,12 +265,13 @@ def envoyer_relance_facture_email(
     {bouton_paiement}
     <p>{cfg['conclusion']}</p>
     {mention}
-    <p>Cordialement,<br><strong>{artisan_nom}</strong></p>
+    {signature}
     <hr style="border:none;border-top:1px solid #eee;margin:24px 0">
     <p style="font-size:12px;color:#999">Envoye via MyArtipro</p>
 </div>
                 """,
-            }
+            },
+            reply_to=artisan_email,
         )
         print(
             f"[Email] Relance facture P{palier} {facture_numero} "

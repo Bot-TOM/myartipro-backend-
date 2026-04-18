@@ -38,7 +38,7 @@ async def relancer_devis_sans_reponse():
 
         artisan = (await (
             db.table("profiles")
-            .select("nom, prenom, entreprise")
+            .select("nom, prenom, entreprise, email, telephone")
             .eq("id", devis["user_id"])
             .single()
             .execute()
@@ -58,6 +58,8 @@ async def relancer_devis_sans_reponse():
                 artisan_nom=artisan_nom,
                 devis_numero=devis["numero"],
                 jours_depuis_envoi=jours,
+                artisan_email=artisan.get("email") or "",
+                artisan_telephone=artisan.get("telephone") or "",
             )
             await db.table("devis").update({
                 "statut": "relancé",
@@ -117,7 +119,7 @@ async def relancer_factures_impayees():
 
         artisan = (await (
             db.table("profiles")
-            .select("nom, prenom, entreprise")
+            .select("nom, prenom, entreprise, email, telephone")
             .eq("id", f["user_id"])
             .single()
             .execute()
@@ -138,6 +140,8 @@ async def relancer_factures_impayees():
                 jours_depuis_emission=jours,
                 palier=palier,
                 lien_paiement=f.get("stripe_checkout_url") or "",
+                artisan_email=artisan.get("email") or "",
+                artisan_telephone=artisan.get("telephone") or "",
             )
             await db.table("factures").update({
                 "relances_count": palier,

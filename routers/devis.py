@@ -94,7 +94,7 @@ async def envoyer_devis(devis_id: str, current_user: dict = Depends(get_current_
     client = devis.get("clients")
     if not client or not client.get("email"):
         raise HTTPException(status_code=400, detail="Le client n'a pas d'adresse email")
-    artisan = (await db.table("profiles").select("nom, prenom, entreprise").eq("id", current_user["id"]).single().execute()).data
+    artisan = (await db.table("profiles").select("nom, prenom, entreprise, email, telephone").eq("id", current_user["id"]).single().execute()).data
     artisan_nom = artisan.get("entreprise") or f"{artisan.get('prenom', '')} {artisan.get('nom', '')}".strip()
     acceptance_token = str(uuid.uuid4())
     try:
@@ -103,6 +103,8 @@ async def envoyer_devis(devis_id: str, current_user: dict = Depends(get_current_
             client_nom=f"{client.get('prenom', '')} {client['nom']}".strip(),
             artisan_nom=artisan_nom, devis_numero=devis["numero"],
             devis_id=devis_id, acceptance_token=acceptance_token,
+            artisan_email=artisan.get("email") or "",
+            artisan_telephone=artisan.get("telephone") or "",
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur envoi email: {str(e)}")
