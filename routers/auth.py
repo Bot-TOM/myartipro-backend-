@@ -72,6 +72,7 @@ class ProfileUpdate(BaseModel):
     stripe_enabled: Optional[bool] = None
     moyens_paiement: Optional[list[str]] = None
     instructions_paiement: Optional[str] = None
+    onboarding_done: Optional[bool] = None
 
     @field_validator("siret")
     @classmethod
