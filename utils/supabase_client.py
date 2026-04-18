@@ -62,7 +62,9 @@ class TableQuery:
         return self
 
     def like(self, column: str, pattern: str) -> "TableQuery":
-        self._params[column] = f"like.{pattern}"
+        # PostgREST accepte * comme alias de % ; evite les problemes de WAF
+        # Cloudflare qui rejettent parfois les %25 en query params.
+        self._params[column] = f"like.{pattern.replace('%', '*')}"
         return self
 
     def lt(self, column: str, value) -> "TableQuery":
@@ -117,7 +119,10 @@ class TableQuery:
                 raise ValueError(f"Unknown method: {self._method}")
 
         if resp.status_code >= 400:
-            raise Exception(f"Supabase error {resp.status_code}: {resp.text}")
+            # Tronque le body pour garder les logs lisibles (Cloudflare renvoie
+            # parfois des pages HTML de plusieurs centaines de lignes).
+            body = (resp.text or "")[:300].replace("\n", " ")
+            raise Exception(f"Supabase error {resp.status_code}: {body}")
 
         data = resp.json() if resp.text else []
         if self._single and isinstance(data, list):
