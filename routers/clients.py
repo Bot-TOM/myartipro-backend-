@@ -7,10 +7,21 @@ router = APIRouter()
 
 
 async def _ensure_profile(user_id: str, email: str) -> None:
+    """Crée le profil s'il manque. Idempotent — silencieux si déjà présent."""
+    db = get_supabase()
     try:
-        await get_supabase().table("profiles").insert({"id": user_id, "email": email}).execute()
-    except Exception:
-        pass
+        existing = await db.table("profiles").select("id").eq("id", user_id).execute()
+        if existing.data:
+            return
+    except Exception as e:
+        print(f"[ensure_profile] check err: {e}")
+    try:
+        await db.table("profiles").insert({
+            "id": user_id, "email": email, "nom": "", "prenom": "",
+        }).execute()
+        print(f"[ensure_profile] créé: {user_id}")
+    except Exception as e:
+        print(f"[ensure_profile] create err: {e}")
 
 
 @router.get("")
