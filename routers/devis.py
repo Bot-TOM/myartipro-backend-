@@ -85,6 +85,37 @@ async def delete_devis(devis_id: str, current_user: dict = Depends(get_current_u
     return {"message": "Devis supprimé"}
 
 
+@router.post("/{devis_id}/dupliquer", status_code=201)
+async def dupliquer_devis(devis_id: str, current_user: dict = Depends(get_current_user)):
+    db = get_supabase_for_user(current_user["token"])
+    source = (await db.table("devis").select("client_id, titre, prestations, tva, acompte_pct, notes, date_validite, urgence, charge").eq("id", devis_id).eq("user_id", current_user["id"]).single().execute()).data
+    if not source:
+        raise HTTPException(status_code=404, detail="Devis non trouvé")
+    numero = await _generer_numero(current_user["id"], current_user["token"])
+    prestations = source.get("prestations") or []
+    tva = source.get("tva") or 20.0
+    montant_ht, montant_ttc = _calculer_montants(prestations, tva)
+    result = await db.table("devis").insert({
+        "user_id": current_user["id"],
+        "client_id": source["client_id"],
+        "numero": numero,
+        "titre": f"Copie — {source['titre']}",
+        "prestations": prestations,
+        "montant_ht": montant_ht,
+        "tva": tva,
+        "montant_ttc": montant_ttc,
+        "acompte_pct": source.get("acompte_pct") or 0,
+        "notes": source.get("notes"),
+        "date_validite": source.get("date_validite"),
+        "urgence": source.get("urgence") or "normal",
+        "charge": source.get("charge"),
+        "statut": "brouillon",
+    }).execute()
+    if not result.data:
+        raise HTTPException(status_code=500, detail="Erreur lors de la duplication")
+    return result.data[0]
+
+
 @router.post("/{devis_id}/envoyer")
 async def envoyer_devis(devis_id: str, current_user: dict = Depends(get_current_user)):
     db = get_supabase_for_user(current_user["token"])
