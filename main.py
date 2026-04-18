@@ -1,5 +1,4 @@
 import os
-from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,41 +10,11 @@ from slowapi.errors import RateLimitExceeded
 
 env_path = Path(__file__).resolve().parent / ".env"
 load_dotenv(env_path)
-load_dotenv(env_path.parent / ".env")
 
 from routers import auth, clients, devis, pdf, factures, stripe_routes, rappels
 
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Démarrage scheduler relances
-    try:
-        from apscheduler.schedulers.background import BackgroundScheduler
-        from services.relance_service import relancer_devis_sans_reponse
-
-        scheduler = BackgroundScheduler()
-        scheduler.add_job(relancer_devis_sans_reponse, "cron", hour=8, minute=0, id="relance_devis")
-        scheduler.start()
-        app.state.scheduler = scheduler
-        print("[Scheduler] Démarré")
-    except Exception as e:
-        print(f"[Scheduler] ERREUR démarrage: {e}")
-        app.state.scheduler = None
-
-    yield
-
-    # Arrêt scheduler
-    scheduler = getattr(app.state, "scheduler", None)
-    if scheduler:
-        try:
-            scheduler.shutdown(wait=False)
-            print("[Scheduler] Arrêté")
-        except Exception:
-            pass
-
-
 limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
-app = FastAPI(title="MyArtipro API", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="MyArtipro API", version="1.0.0")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -85,7 +54,6 @@ async def health():
         "SUPABASE_KEY": bool(os.getenv("SUPABASE_KEY")),
         "SUPABASE_SERVICE_KEY": bool(os.getenv("SUPABASE_SERVICE_KEY")),
         "RESEND_API_KEY": bool(os.getenv("RESEND_API_KEY")),
-        "scheduler": getattr(app.state, "scheduler", None) is not None,
     }
-    ok = all(v for k, v in checks.items() if k != "scheduler")
+    ok = all(checks.values())
     return {"status": "ok" if ok else "degraded", "checks": checks}
