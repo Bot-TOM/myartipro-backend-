@@ -7,12 +7,13 @@ FONT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "fonts
 
 
 class DevisPDF(FPDF):
-    """PDF professionnel pour devis artisan."""
+    """PDF professionnel pour devis ou facture artisan."""
 
-    def __init__(self, artisan: dict):
+    def __init__(self, artisan: dict, doc_type: str = "devis"):
         super().__init__()
         self.artisan = artisan
-        self.set_auto_page_break(auto=True, margin=25)
+        self.doc_type = doc_type  # "devis" ou "facture"
+        self.set_auto_page_break(auto=True, margin=30)
 
     def header(self):
         # Logo si disponible
@@ -60,15 +61,17 @@ class DevisPDF(FPDF):
         self.ln(5)
 
     def footer(self):
-        self.set_y(-20)
+        self.set_y(-18)
         self.set_font("Helvetica", "", 7)
         self.set_text_color(150, 150, 150)
         nom = self.artisan.get("entreprise") or f"{self.artisan.get('prenom', '')} {self.artisan.get('nom', '')}"
         siret = f" - SIRET {self.artisan['siret']}" if self.artisan.get("siret") else ""
         self.cell(0, 4, _safe(f"{nom}{siret}"), align="C", new_x="LMARGIN", new_y="NEXT")
+
+        # Note TVA franchise : valide pour auto-entrepreneur non assujetti
         self.cell(
             0, 4,
-            _safe("Devis valable 30 jours sauf mention contraire - TVA non applicable, art. 293 B du CGI (si auto-entrepreneur)"),
+            _safe("TVA non applicable, art. 293 B du CGI"),
             align="C",
         )
 
@@ -114,7 +117,7 @@ def _safe(text: str) -> str:
 
 def generer_pdf_devis(devis: dict, client: dict, artisan: dict) -> bytes:
     """Genere un PDF professionnel du devis."""
-    pdf = DevisPDF(artisan)
+    pdf = DevisPDF(artisan, doc_type="devis")
     pdf.add_page()
 
     # === TITRE DEVIS ===
@@ -277,12 +280,39 @@ def generer_pdf_devis(devis: dict, client: dict, artisan: dict) -> bytes:
         pdf.set_font("Helvetica", "", 9)
         pdf.cell(0, 5, _safe(devis["notes"]), new_x="LMARGIN", new_y="NEXT")
 
+    # === MENTIONS DEVIS + ZONE SIGNATURE ===
+    # Obligatoire pour travaux > 150 EUR B2C (arrete du 2 mars 1990)
+    pdf.ln(10)
+    pdf.set_font("Helvetica", "", 8)
+    pdf.set_text_color(100, 100, 100)
+    pdf.multi_cell(
+        0, 4,
+        _safe("Devis valable 30 jours a compter de sa date d'emission. "
+              "Apres acceptation, merci de retourner ce devis signe avec la mention "
+              '"Bon pour accord" manuscrite.'),
+    )
+    pdf.ln(3)
+
+    # Zone signature (deux cadres cote a cote)
+    y_sign = pdf.get_y()
+    pdf.set_draw_color(200, 200, 200)
+    pdf.set_font("Helvetica", "", 8)
+    pdf.set_text_color(120, 120, 120)
+    # Cadre date
+    pdf.rect(10, y_sign, 90, 22)
+    pdf.set_xy(12, y_sign + 2)
+    pdf.cell(0, 4, "Date :", new_x="LMARGIN", new_y="NEXT")
+    # Cadre signature
+    pdf.rect(110, y_sign, 90, 22)
+    pdf.set_xy(112, y_sign + 2)
+    pdf.cell(0, 4, 'Signature du client precedee de "Bon pour accord" :', new_x="LMARGIN", new_y="NEXT")
+
     return pdf.output()
 
 
 def generer_pdf_facture(facture: dict, client: dict, artisan: dict) -> bytes:
     """Genere un PDF professionnel de la facture."""
-    pdf = DevisPDF(artisan)
+    pdf = DevisPDF(artisan, doc_type="facture")
     pdf.add_page()
 
     # === TITRE FACTURE ===
@@ -437,5 +467,63 @@ def generer_pdf_facture(facture: dict, client: dict, artisan: dict) -> bytes:
         pdf.set_x(pdf.get_x() + 4)
         pdf.set_font("Helvetica", "", 9)
         pdf.cell(0, 5, _safe(facture["notes"]), new_x="LMARGIN", new_y="NEXT")
+
+    # === TAMPON "FACTURE ACQUITTEE" si payee ===
+    if facture.get("statut") == "payée" and facture.get("date_paiement"):
+        dp = facture["date_paiement"]
+        dp_str = dp[:10] if isinstance(dp, str) and len(dp) >= 10 else str(dp)[:10]
+        pdf.ln(8)
+        pdf.set_draw_color(34, 197, 94)  # green-500
+        pdf.set_text_color(34, 197, 94)
+        pdf.set_font("Helvetica", "B", 14)
+        y_tampon = pdf.get_y()
+        pdf.set_line_width(0.8)
+        pdf.rect(60, y_tampon, 90, 12)
+        pdf.set_xy(60, y_tampon + 2)
+        pdf.cell(90, 8, _safe(f"FACTURE ACQUITTEE LE {dp_str}"), align="C")
+        pdf.set_line_width(0.2)
+        pdf.ln(16)
+
+    # === MENTIONS LEGALES OBLIGATOIRES FACTURE ===
+    # Art. L441-10 Code de commerce : penalites + indemnite 40 EUR + escompte
+    pdf.ln(6)
+    pdf.set_draw_color(226, 232, 240)
+    pdf.set_fill_color(248, 250, 252)
+    y_mentions = pdf.get_y()
+    pdf.set_font("Helvetica", "B", 8)
+    pdf.set_text_color(80, 80, 80)
+    pdf.cell(0, 5, "Conditions de reglement", new_x="LMARGIN", new_y="NEXT")
+
+    pdf.set_font("Helvetica", "", 7)
+    pdf.set_text_color(100, 100, 100)
+
+    # Delai de paiement
+    if facture.get("date_echeance"):
+        de = facture["date_echeance"]
+        de_str = de[:10] if isinstance(de, str) and len(de) >= 10 else str(de)[:10]
+        pdf.multi_cell(0, 3.5, _safe(f"- Date limite de paiement : {de_str}"))
+    else:
+        pdf.multi_cell(0, 3.5, _safe("- Paiement a reception de la facture."))
+
+    # Pénalités de retard (L441-10)
+    pdf.multi_cell(
+        0, 3.5,
+        _safe("- En cas de retard de paiement, des penalites de retard seront exigibles "
+              "au taux de 3 fois le taux d'interet legal en vigueur (art. L441-10 du Code de commerce), "
+              "sans qu'un rappel soit necessaire."),
+    )
+
+    # Indemnité forfaitaire 40€ (L441-10, B2B)
+    pdf.multi_cell(
+        0, 3.5,
+        _safe("- Une indemnite forfaitaire de 40 EUR pour frais de recouvrement sera exigible "
+              "en cas de retard de paiement (decret 2012-1115 du 2 octobre 2012)."),
+    )
+
+    # Escompte
+    pdf.multi_cell(
+        0, 3.5,
+        _safe("- Aucun escompte n'est consenti en cas de paiement anticipe."),
+    )
 
     return pdf.output()
