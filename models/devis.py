@@ -14,6 +14,7 @@ class DevisCreate(BaseModel):
     titre: str
     prestations: List[Prestation]
     tva: float = 20.0
+    acompte_pct: int = 0
     date_validite: Optional[str] = None
     notes: Optional[str] = None
     urgence: Optional[str] = "normal"
@@ -25,6 +26,7 @@ class DevisUpdate(BaseModel):
     titre: Optional[str] = None
     prestations: Optional[List[Prestation]] = None
     tva: Optional[float] = None
+    acompte_pct: Optional[int] = None
     statut: Optional[str] = None
     date_validite: Optional[str] = None
     notes: Optional[str] = None
@@ -42,6 +44,7 @@ class DevisResponse(BaseModel):
     montant_ht: float
     tva: float
     montant_ttc: float
+    acompte_pct: int = 0
     statut: str
     date_creation: datetime
     date_envoi: Optional[datetime] = None

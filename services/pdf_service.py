@@ -265,6 +265,29 @@ def generer_pdf_devis(devis: dict, client: dict, artisan: dict) -> bytes:
     pdf.cell(40, 8, "Total TTC", align="L")
     pdf.cell(20, 8, f"{montant_ttc:.2f} EUR", align="R", new_x="LMARGIN", new_y="NEXT")
 
+    # === ACOMPTE ===
+    acompte_pct = int(devis.get("acompte_pct", 0))
+    if acompte_pct > 0:
+        acompte_ttc = montant_ttc * acompte_pct / 100
+        solde_ttc = montant_ttc - acompte_ttc
+
+        pdf.ln(2)
+        pdf.set_draw_color(200, 200, 200)
+        pdf.line(x_label, pdf.get_y(), x_label + 60, pdf.get_y())
+        pdf.ln(2)
+
+        pdf.set_font("Helvetica", "", 9)
+        pdf.set_text_color(100, 100, 100)
+        pdf.set_x(x_label)
+        pdf.cell(40, 6, _safe(f"Acompte a la commande ({acompte_pct}%)"), align="L")
+        pdf.cell(20, 6, f"{acompte_ttc:.2f} EUR", align="R", new_x="LMARGIN", new_y="NEXT")
+
+        pdf.set_font("Helvetica", "B", 10)
+        pdf.set_text_color(30, 30, 30)
+        pdf.set_x(x_label)
+        pdf.cell(40, 6, "Solde a la livraison", align="L")
+        pdf.cell(20, 6, f"{solde_ttc:.2f} EUR", align="R", new_x="LMARGIN", new_y="NEXT")
+
     # === NOTES ===
     if devis.get("notes"):
         pdf.ln(8)
