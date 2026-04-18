@@ -22,7 +22,7 @@ async def _generer_numero_facture(user_id: str, token: str) -> str:
 
 @router.get("")
 async def list_factures(current_user: dict = Depends(get_current_user)):
-    result = await get_supabase_for_user(current_user["token"]).table("factures").select("*, clients(nom, prenom, email)").eq("user_id", current_user["id"]).order("date_creation", desc=True).execute()
+    result = await get_supabase_for_user(current_user["token"]).table("factures").select("*, clients(nom, prenom, email)").eq("user_id", current_user["id"]).is_("deleted_at", "null").order("date_creation", desc=True).execute()
     return result.data
 
 
@@ -52,7 +52,7 @@ async def creer_facture_depuis_devis(devis_id: str, current_user: dict = Depends
 
 @router.get("/{facture_id}")
 async def get_facture(facture_id: str, current_user: dict = Depends(get_current_user)):
-    result = await get_supabase_for_user(current_user["token"]).table("factures").select("*, clients(nom, prenom, email, telephone, adresse)").eq("id", facture_id).eq("user_id", current_user["id"]).single().execute()
+    result = await get_supabase_for_user(current_user["token"]).table("factures").select("*, clients(nom, prenom, email, telephone, adresse)").eq("id", facture_id).eq("user_id", current_user["id"]).is_("deleted_at", "null").single().execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="Facture non trouvée")
     return result.data
@@ -71,17 +71,32 @@ async def update_facture(facture_id: str, data: FactureUpdate, current_user: dic
 
 @router.delete("/{facture_id}")
 async def delete_facture(facture_id: str, current_user: dict = Depends(get_current_user)):
+    """
+    Suppression d'une facture.
+    - Statut `brouillon` : suppression réelle autorisée.
+    - Statut `émise` / `payée` : soft-delete uniquement (conservation 10 ans obligatoire en France).
+    - Statut `annulée` : soft-delete également.
+    """
     db = get_supabase_for_user(current_user["token"])
-    check = await db.table("factures").select("id").eq("id", facture_id).eq("user_id", current_user["id"]).execute()
+    check = await db.table("factures").select("id, statut").eq("id", facture_id).eq("user_id", current_user["id"]).is_("deleted_at", "null").execute()
     if not check.data:
         raise HTTPException(status_code=404, detail="Facture non trouvée")
-    await db.table("factures").delete().eq("id", facture_id).eq("user_id", current_user["id"]).execute()
-    return {"message": "Facture supprimée"}
+
+    statut = check.data[0].get("statut")
+    if statut == "brouillon":
+        await db.table("factures").delete().eq("id", facture_id).eq("user_id", current_user["id"]).execute()
+        return {"message": "Facture supprimée"}
+
+    # Factures émises/payées/annulées : soft-delete pour conformité fiscale
+    await db.table("factures").update({
+        "deleted_at": datetime.now(timezone.utc).isoformat()
+    }).eq("id", facture_id).eq("user_id", current_user["id"]).execute()
+    return {"message": "Facture archivée"}
 
 
 @router.get("/export/csv")
 async def export_factures_csv(current_user: dict = Depends(get_current_user)):
-    result = await get_supabase_for_user(current_user["token"]).table("factures").select("*, clients(nom, prenom)").eq("user_id", current_user["id"]).order("date_creation", desc=False).execute()
+    result = await get_supabase_for_user(current_user["token"]).table("factures").select("*, clients(nom, prenom)").eq("user_id", current_user["id"]).is_("deleted_at", "null").order("date_creation", desc=False).execute()
     factures = result.data or []
     output = io.StringIO()
     writer = csv.writer(output, delimiter=';')

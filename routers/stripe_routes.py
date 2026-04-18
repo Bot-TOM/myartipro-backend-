@@ -1,9 +1,11 @@
+import logging
 from fastapi import APIRouter, HTTPException, Depends, Request
 from utils.supabase_client import get_supabase_for_user, get_supabase
 from utils.auth import get_current_user
 from services.stripe_service import creer_checkout_session, verifier_webhook
-from datetime import datetime
+from datetime import datetime, timezone
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -34,11 +36,28 @@ async def stripe_webhook(request: Request):
     sig_header = request.headers.get("stripe-signature", "")
     try:
         event = verifier_webhook(payload, sig_header)
-    except Exception:
+    except Exception as e:
+        logger.warning("[stripe webhook] signature invalide: %s", e)
         raise HTTPException(status_code=400, detail="Signature webhook invalide")
-    if event["type"] == "checkout.session.completed":
+
+    event_type = event.get("type")
+    logger.info("[stripe webhook] event reçu: %s (id=%s)", event_type, event.get("id"))
+
+    if event_type == "checkout.session.completed":
         session = event["data"]["object"]
         facture_id = session.get("metadata", {}).get("facture_id")
-        if facture_id:
-            await get_supabase().table("factures").update({"statut": "payée", "date_paiement": datetime.now().isoformat()}).eq("id", facture_id).execute()
+        if not facture_id:
+            logger.error("[stripe webhook] checkout.session.completed sans facture_id (session=%s)", session.get("id"))
+            return {"received": True}
+        try:
+            await get_supabase().table("factures").update({
+                "statut": "payée",
+                "date_paiement": datetime.now(timezone.utc).isoformat(),
+            }).eq("id", facture_id).execute()
+            logger.info("[stripe webhook] facture %s marquée payée", facture_id)
+        except Exception as e:
+            logger.exception("[stripe webhook] erreur update facture %s: %s", facture_id, e)
+            # Renvoyer 500 pour que Stripe retente automatiquement
+            raise HTTPException(status_code=500, detail="Erreur mise à jour facture")
+
     return {"received": True}

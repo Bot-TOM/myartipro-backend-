@@ -85,6 +85,8 @@ async def health():
         "SUPABASE_KEY": bool(os.getenv("SUPABASE_KEY")),
         "SUPABASE_SERVICE_KEY": bool(os.getenv("SUPABASE_SERVICE_KEY")),
         "RESEND_API_KEY": bool(os.getenv("RESEND_API_KEY")),
+        "STRIPE_SECRET_KEY": bool(os.getenv("STRIPE_SECRET_KEY")),
+        "STRIPE_WEBHOOK_SECRET": bool(os.getenv("STRIPE_WEBHOOK_SECRET")),
     }
     ok = all(checks.values())
     return {"status": "ok" if ok else "degraded", "checks": checks}
