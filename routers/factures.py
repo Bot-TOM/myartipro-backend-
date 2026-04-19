@@ -1,11 +1,12 @@
 import csv
 import io
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Query
 from fastapi.responses import StreamingResponse
 from models.facture import FactureUpdate
 from utils.supabase_client import get_supabase_for_user
 from utils.auth import get_current_user
 from datetime import datetime, timezone
+from typing import Optional
 
 router = APIRouter()
 
@@ -95,15 +96,84 @@ async def delete_facture(facture_id: str, current_user: dict = Depends(get_curre
 
 
 @router.get("/export/csv")
-async def export_factures_csv(current_user: dict = Depends(get_current_user)):
-    result = await get_supabase_for_user(current_user["token"]).table("factures").select("*, clients(nom, prenom)").eq("user_id", current_user["id"]).is_("deleted_at", "null").order("date_creation", desc=False).execute()
+async def export_factures_csv(
+    current_user: dict = Depends(get_current_user),
+    mois: Optional[int] = Query(None, ge=1, le=12),
+    annee: Optional[int] = Query(None, ge=2020, le=2100),
+):
+    db = get_supabase_for_user(current_user["token"])
+    query = db.table("factures").select("*, clients(nom, prenom)").eq("user_id", current_user["id"]).is_("deleted_at", "null")
+
+    if mois and annee:
+        # Filtrage sur la date de création du mois demandé
+        debut = f"{annee}-{mois:02d}-01"
+        # Dernier jour du mois suivant (exclusive)
+        if mois == 12:
+            fin = f"{annee + 1}-01-01"
+        else:
+            fin = f"{annee}-{mois + 1:02d}-01"
+        query = query.gte("date_creation", debut).lt("date_creation", fin)
+
+    result = await query.order("date_creation", desc=False).execute()
     factures = result.data or []
+
     output = io.StringIO()
-    writer = csv.writer(output, delimiter=';')
-    writer.writerow(['Numero', 'Client', 'Date creation', 'Date echeance', 'Date paiement', 'Montant HT', 'TVA %', 'Montant TTC', 'Statut', 'Notes'])
+    writer = csv.writer(output, delimiter=';', quoting=csv.QUOTE_MINIMAL)
+
+    writer.writerow([
+        'Numero', 'Client', 'Titre',
+        'Date creation', 'Date echeance', 'Date paiement',
+        'Montant HT (EUR)', 'TVA (%)', 'Montant TTC (EUR)',
+        'Statut', 'Notes',
+    ])
+
+    total_ht = 0.0
+    total_ttc = 0.0
+    nb_payees = 0
+
     for f in factures:
         client_nom = f"{f['clients'].get('prenom', '')} {f['clients'].get('nom', '')}".strip() if f.get('clients') else ''
-        writer.writerow([f.get('numero', ''), client_nom, (f.get('date_creation') or '')[:10], (f.get('date_echeance') or '')[:10], (f.get('date_paiement') or '')[:10], f.get('montant_ht', ''), f.get('tva', ''), f.get('montant_ttc', ''), f.get('statut', ''), f.get('notes', '')])
-    output.seek(0)
-    filename = f"factures_export_{datetime.now().strftime('%Y%m%d')}.csv"
-    return StreamingResponse(iter([output.getvalue()]), media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+        ht = float(f.get('montant_ht') or 0)
+        ttc = float(f.get('montant_ttc') or 0)
+        total_ht += ht
+        total_ttc += ttc
+        if f.get('statut') == 'payée':
+            nb_payees += 1
+        writer.writerow([
+            f.get('numero', ''),
+            client_nom,
+            f.get('titre', ''),
+            (f.get('date_creation') or '')[:10],
+            (f.get('date_echeance') or '')[:10],
+            (f.get('date_paiement') or '')[:10],
+            f"{ht:.2f}",
+            f.get('tva', ''),
+            f"{ttc:.2f}",
+            f.get('statut', ''),
+            f.get('notes', ''),
+        ])
+
+    # Ligne de totaux
+    writer.writerow([])
+    writer.writerow([
+        f"TOTAL ({len(factures)} facture{'s' if len(factures) > 1 else ''}, {nb_payees} payee{'s' if nb_payees > 1 else ''})",
+        '', '',  '', '', '',
+        f"{total_ht:.2f}",
+        '',
+        f"{total_ttc:.2f}",
+        '', '',
+    ])
+
+    # UTF-8 BOM pour compatibilité Excel
+    content = '\ufeff' + output.getvalue()
+
+    if mois and annee:
+        filename = f"factures_{annee}-{mois:02d}.csv"
+    else:
+        filename = f"factures_export_{datetime.now().strftime('%Y%m%d')}.csv"
+
+    return StreamingResponse(
+        iter([content.encode('utf-8')]),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
