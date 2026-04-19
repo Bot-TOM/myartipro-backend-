@@ -112,7 +112,7 @@ async def export_factures_csv(
             fin = f"{annee + 1}-01-01"
         else:
             fin = f"{annee}-{mois + 1:02d}-01"
-        query = query.gte("date_creation", debut).lt("date_creation", fin)
+        query = query.filter("date_creation", "gte", debut).filter("date_creation", "lt", fin)
 
     result = await query.order("date_creation", desc=False).execute()
     factures = result.data or []
