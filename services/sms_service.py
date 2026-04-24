@@ -5,9 +5,8 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "")
-TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")
-TWILIO_FROM_NUMBER = os.getenv("TWILIO_FROM_NUMBER", "")
+BREVO_API_KEY = os.getenv("BREVO_API_KEY", "")
+SMS_SENDER = "MyArtipro"
 
 
 def _normaliser_numero(telephone: str) -> str:
@@ -20,17 +19,17 @@ def _normaliser_numero(telephone: str) -> str:
 
 
 async def envoyer_sms(to: str, message: str) -> bool:
-    if not all([TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER]):
-        logger.warning("[sms] Twilio non configuré (TWILIO_ACCOUNT_SID / AUTH_TOKEN / FROM_NUMBER manquants)")
+    if not BREVO_API_KEY:
+        logger.warning("[sms] BREVO_API_KEY non configuré")
         return False
 
     numero = _normaliser_numero(to)
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.post(
-                f"https://api.twilio.com/2010-04-01/Accounts/{TWILIO_ACCOUNT_SID}/Messages.json",
-                auth=(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN),
-                data={"From": TWILIO_FROM_NUMBER, "To": numero, "Body": message},
+                "https://api.brevo.com/v3/transactionalSMS/sms",
+                headers={"api-key": BREVO_API_KEY, "Content-Type": "application/json"},
+                json={"sender": SMS_SENDER, "recipient": numero, "content": message},
             )
             resp.raise_for_status()
             logger.info("[sms] envoyé à %s", numero)
