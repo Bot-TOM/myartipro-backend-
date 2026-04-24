@@ -76,10 +76,10 @@ async def test_sms(current_user: dict = Depends(get_current_user)):
     if not profil.get("sms_notifications"):
         return {"ok": False, "error": "Les SMS sont désactivés dans votre profil"}
 
-    ok = await envoyer_sms(profil["telephone"], "Test MyArtipro 📲\nLes notifications SMS fonctionnent !")
+    ok, err = await envoyer_sms(profil["telephone"], "Test MyArtipro 📲\nLes notifications SMS fonctionnent !")
     if ok:
         return {"ok": True}
-    return {"ok": False, "error": "Envoi échoué — vérifiez que BREVO_API_KEY est bien configuré sur Railway"}
+    return {"ok": False, "error": err or "Envoi échoué"}
 
 
 @router.post("/test")
@@ -154,7 +154,9 @@ async def _send_sms(user_id: str, message: str) -> None:
         .execute()
 
     if result.data and result.data.get("sms_notifications") and result.data.get("telephone"):
-        await envoyer_sms(result.data["telephone"], message)
+        ok, err = await envoyer_sms(result.data["telephone"], message)
+        if not ok:
+            logger.warning("[sms] échec pour user %s : %s", user_id, err)
 
 
 async def notify_user(

@@ -18,10 +18,9 @@ def _normaliser_numero(telephone: str) -> str:
     return n
 
 
-async def envoyer_sms(to: str, message: str) -> bool:
+async def envoyer_sms(to: str, message: str) -> tuple[bool, str]:
     if not BREVO_API_KEY:
-        logger.warning("[sms] BREVO_API_KEY non configuré")
-        return False
+        return False, "BREVO_API_KEY non configuré sur Railway"
 
     numero = _normaliser_numero(to)
     try:
@@ -31,9 +30,12 @@ async def envoyer_sms(to: str, message: str) -> bool:
                 headers={"api-key": BREVO_API_KEY, "Content-Type": "application/json"},
                 json={"sender": SMS_SENDER, "recipient": numero, "content": message},
             )
-            resp.raise_for_status()
+            if resp.status_code >= 400:
+                detail = resp.text[:200]
+                logger.warning("[sms] erreur Brevo %s : %s", resp.status_code, detail)
+                return False, f"Brevo erreur {resp.status_code} : {detail}"
             logger.info("[sms] envoyé à %s", numero)
-            return True
+            return True, ""
     except Exception as e:
         logger.warning("[sms] erreur envoi à %s : %s", numero, e)
-        return False
+        return False, str(e)
