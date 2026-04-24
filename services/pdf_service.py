@@ -56,6 +56,9 @@ class DevisPDF(FPDF):
             infos.append(email)
         if siret:
             infos.append(f"SIRET : {siret}")
+        numero_tva = (self.artisan.get("numero_tva") or "").strip()
+        if numero_tva:
+            infos.append(f"N° TVA : {numero_tva}")
         if infos:
             self.cell(0, 4, _safe(" | ".join(infos)), new_x="LMARGIN", new_y="NEXT")
         self.ln(5)
@@ -73,6 +76,17 @@ class DevisPDF(FPDF):
             self.cell(
                 0, 4,
                 _safe("TVA non applicable, art. 293 B du CGI"),
+                align="C",
+                new_x="LMARGIN", new_y="NEXT",
+            )
+
+        # Mention conformité loi anti-fraude TVA (obligatoire pour logiciels de facturation)
+        if self.doc_type == "facture":
+            self.set_font("Helvetica", "", 6)
+            self.set_text_color(180, 180, 180)
+            self.cell(
+                0, 3,
+                _safe("Logiciel MyArtipro - conforme art. 286 I-3 bis CGI (loi anti-fraude TVA 2018) - myartipro.fr/conformite"),
                 align="C",
             )
 
@@ -491,6 +505,28 @@ def generer_pdf_facture(facture: dict, client: dict, artisan: dict) -> bytes:
         pdf.set_x(pdf.get_x() + 4)
         pdf.set_font("Helvetica", "", 9)
         pdf.cell(0, 5, _safe(facture["notes"]), new_x="LMARGIN", new_y="NEXT")
+
+    # === NOTE ATTESTATION TAUX REDUIT ===
+    # Obligatoire pour justifier l'application d'un taux réduit (art. 279-0 bis / 278-0 bis CGI)
+    tva_pct_note = float(facture.get("tva", 20))
+    if tva_pct_note in (10.0, 5.5):
+        pdf.ln(5)
+        pdf.set_x(pdf.l_margin)
+        pdf.set_font("Helvetica", "I", 7)
+        pdf.set_text_color(120, 120, 120)
+        if tva_pct_note == 10.0:
+            note_taux = _safe(
+                "Taux de TVA reduit de 10 % applique sur la base d'une attestation simplifiee "
+                "fournie par le client, conformement a l'art. 279-0 bis du CGI "
+                "(travaux de renovation portant sur un local a usage d'habitation acheve depuis plus de 2 ans)."
+            )
+        else:
+            note_taux = _safe(
+                "Taux de TVA reduit de 5,5 % applique sur la base d'une attestation simplifiee "
+                "fournie par le client, conformement a l'art. 278-0 bis du CGI "
+                "(travaux d'amelioration de la qualite energetique des logements)."
+            )
+        pdf.multi_cell(190, 3.5, note_taux)
 
     # === MENTIONS LEGALES OBLIGATOIRES FACTURE ===
     # Art. L441-10 Code de commerce : penalites + indemnite 40 EUR + escompte
