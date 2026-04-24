@@ -37,16 +37,20 @@ class UnsubscribeIn(BaseModel):
 
 @router.post("/subscribe", status_code=201)
 async def subscribe(data: SubscriptionIn, current_user: dict = Depends(get_current_user)):
-    await get_supabase_for_user(current_user["token"]) \
-        .table("push_subscriptions") \
-        .upsert({
-            "user_id": current_user["id"],
-            "endpoint": data.endpoint,
-            "p256dh": data.keys.p256dh,
-            "auth": data.keys.auth,
-        }, on_conflict="endpoint") \
-        .execute()
-    return {"ok": True}
+    try:
+        await get_supabase_for_user(current_user["token"]) \
+            .table("push_subscriptions") \
+            .upsert({
+                "user_id": current_user["id"],
+                "endpoint": data.endpoint,
+                "p256dh": data.keys.p256dh,
+                "auth": data.keys.auth,
+            }, on_conflict="endpoint") \
+            .execute()
+        return {"ok": True}
+    except Exception as e:
+        logger.error("[push] subscribe error: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/unsubscribe")
