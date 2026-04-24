@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from fastapi import APIRouter, HTTPException, Depends
 from models.devis import DevisCreate, DevisUpdate
@@ -170,7 +171,7 @@ async def get_devis_public(acceptance_token: str):
 @router.post("/public/{acceptance_token}/accepter")
 async def accepter_devis_public(acceptance_token: str):
     db = get_supabase()
-    result = await db.table("devis").select("id, statut, numero, client_id").eq("acceptance_token", acceptance_token).execute()
+    result = await db.table("devis").select("id, statut, numero, client_id, user_id, titre").eq("acceptance_token", acceptance_token).execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="Devis introuvable ou lien invalide")
     devis = result.data[0]
@@ -181,6 +182,15 @@ async def accepter_devis_public(acceptance_token: str):
     await db.table("devis").update({"statut": "accepté", "date_acceptation": datetime.now(timezone.utc).isoformat()}).eq("acceptance_token", acceptance_token).execute()
     if devis.get("client_id"):
         await db.table("clients").update({"statut": "accepte"}).eq("id", devis["client_id"]).execute()
+    if devis.get("user_id"):
+        from routers.push import send_push_to_user
+        asyncio.create_task(send_push_to_user(
+            devis["user_id"],
+            title="Devis accepté ✓",
+            body=f"{devis.get('titre') or devis['numero']} a été accepté par votre client.",
+            url="/devis",
+            tag="devis-accepte",
+        ))
     return {"message": f"Devis {devis['numero']} accepté"}
 
 

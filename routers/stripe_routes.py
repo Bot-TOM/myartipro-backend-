@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from fastapi import APIRouter, HTTPException, Depends, Request
 from utils.supabase_client import get_supabase_for_user, get_supabase
@@ -50,14 +51,24 @@ async def stripe_webhook(request: Request):
             logger.error("[stripe webhook] checkout.session.completed sans facture_id (session=%s)", session.get("id"))
             return {"received": True}
         try:
-            await get_supabase().table("factures").update({
+            db = get_supabase()
+            result = await db.table("factures").update({
                 "statut": "payée",
                 "date_paiement": datetime.now(timezone.utc).isoformat(),
             }).eq("id", facture_id).execute()
             logger.info("[stripe webhook] facture %s marquée payée", facture_id)
+            if result.data:
+                facture = result.data[0]
+                from routers.push import send_push_to_user
+                asyncio.create_task(send_push_to_user(
+                    facture["user_id"],
+                    title="Paiement reçu 💰",
+                    body=f"La facture {facture.get('numero', '')} a été réglée en ligne.",
+                    url="/factures",
+                    tag="paiement-recu",
+                ))
         except Exception as e:
             logger.exception("[stripe webhook] erreur update facture %s: %s", facture_id, e)
-            # Renvoyer 500 pour que Stripe retente automatiquement
             raise HTTPException(status_code=500, detail="Erreur mise à jour facture")
 
     return {"received": True}

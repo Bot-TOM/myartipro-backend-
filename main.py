@@ -14,7 +14,7 @@ from apscheduler.triggers.cron import CronTrigger
 env_path = Path(__file__).resolve().parent / ".env"
 load_dotenv(env_path)
 
-from routers import auth, clients, devis, pdf, factures, stripe_routes, rappels, modeles
+from routers import auth, clients, devis, pdf, factures, stripe_routes, rappels, modeles, push
 from services.relance_service import relancer_devis_sans_reponse, relancer_factures_impayees
 
 scheduler = AsyncIOScheduler(timezone="Europe/Paris")
@@ -72,6 +72,7 @@ app.include_router(stripe_routes.router, prefix="/stripe", tags=["Stripe"])
 app.include_router(pdf.router, prefix="/pdf", tags=["PDF"])
 app.include_router(rappels.router, prefix="/rappels", tags=["Rappels"])
 app.include_router(modeles.router, prefix="/modeles", tags=["Modeles"])
+app.include_router(push.router, prefix="/push", tags=["Push"])
 
 
 @app.exception_handler(Exception)
