@@ -75,6 +75,7 @@ class ProfileUpdate(BaseModel):
     onboarding_done: Optional[bool] = None
     regime_tva: Optional[str] = None
     numero_tva: Optional[str] = None
+    sms_notifications: Optional[bool] = None
 
     @field_validator("regime_tva")
     @classmethod

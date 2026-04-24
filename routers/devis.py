@@ -183,8 +183,8 @@ async def accepter_devis_public(acceptance_token: str):
     if devis.get("client_id"):
         await db.table("clients").update({"statut": "accepte"}).eq("id", devis["client_id"]).execute()
     if devis.get("user_id"):
-        from routers.push import send_push_to_user
-        asyncio.create_task(send_push_to_user(
+        from routers.push import notify_user
+        asyncio.ensure_future(notify_user(
             devis["user_id"],
             title="Devis accepté ✓",
             body=f"{devis.get('titre') or devis['numero']} a été accepté par votre client.",

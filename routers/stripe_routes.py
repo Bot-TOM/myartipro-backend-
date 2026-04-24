@@ -59,8 +59,8 @@ async def stripe_webhook(request: Request):
             logger.info("[stripe webhook] facture %s marquée payée", facture_id)
             if result.data:
                 facture = result.data[0]
-                from routers.push import send_push_to_user
-                asyncio.create_task(send_push_to_user(
+                from routers.push import notify_user
+                asyncio.ensure_future(notify_user(
                     facture["user_id"],
                     title="Paiement reçu 💰",
                     body=f"La facture {facture.get('numero', '')} a été réglée en ligne.",
