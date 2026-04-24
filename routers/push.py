@@ -79,7 +79,7 @@ async def test_sms(current_user: dict = Depends(get_current_user)):
     ok = await envoyer_sms(profil["telephone"], "Test MyArtipro 📲\nLes notifications SMS fonctionnent !")
     if ok:
         return {"ok": True}
-    return {"ok": False, "error": "Envoi échoué — vérifiez les variables Twilio sur Railway"}
+    return {"ok": False, "error": "Envoi échoué — vérifiez que BREVO_API_KEY est bien configuré sur Railway"}
 
 
 @router.post("/test")
