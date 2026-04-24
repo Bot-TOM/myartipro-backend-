@@ -38,15 +38,15 @@ class UnsubscribeIn(BaseModel):
 @router.post("/subscribe", status_code=201)
 async def subscribe(data: SubscriptionIn, current_user: dict = Depends(get_current_user)):
     try:
-        await get_supabase_for_user(current_user["token"]) \
-            .table("push_subscriptions") \
-            .upsert({
-                "user_id": current_user["id"],
-                "endpoint": data.endpoint,
-                "p256dh": data.keys.p256dh,
-                "auth": data.keys.auth,
-            }, on_conflict="endpoint") \
-            .execute()
+        db = get_supabase_for_user(current_user["token"])
+        # Supprime l'ancienne souscription pour cet endpoint si elle existe
+        await db.table("push_subscriptions").delete().eq("endpoint", data.endpoint).execute()
+        await db.table("push_subscriptions").insert({
+            "user_id": current_user["id"],
+            "endpoint": data.endpoint,
+            "p256dh": data.keys.p256dh,
+            "auth": data.keys.auth,
+        }).execute()
         return {"ok": True}
     except Exception as e:
         logger.error("[push] subscribe error: %s", e)
