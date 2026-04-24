@@ -88,28 +88,53 @@ async def test_sms(current_user: dict = Depends(get_current_user)):
 
 @router.post("/test")
 async def test_push(current_user: dict = Depends(get_current_user)):
-    """Envoie une notification push de test à tous les appareils enregistrés."""
+    """Envoie une notification push de test avec rapport d'erreur complet."""
     if not VAPID_PRIVATE_KEY:
-        return {"ok": False, "error": "VAPID_PRIVATE_KEY non configuré sur le serveur"}
+        return {"ok": False, "error": "VAPID_PRIVATE_KEY non configuré sur Railway"}
 
     result = await get_supabase_for_user(current_user["token"]) \
         .table("push_subscriptions") \
-        .select("id") \
+        .select("endpoint, p256dh, auth") \
         .eq("user_id", current_user["id"]) \
         .execute()
 
-    count = len(result.data or [])
-    if count == 0:
+    subs = result.data or []
+    if not subs:
         return {"ok": False, "error": "Aucune souscription enregistrée — activez les notifications d'abord"}
 
-    await _send_push(
-        current_user["id"],
-        "Test MyArtipro 🔔",
-        "Les notifications fonctionnent correctement !",
-        "/",
-        "test",
-    )
-    return {"ok": True, "subscriptions": count}
+    payload = json.dumps({
+        "title": "Test MyArtipro 🔔",
+        "body": "Les notifications fonctionnent !",
+        "url": "/",
+        "tag": "test",
+    })
+
+    sent, errors = 0, []
+    for sub in subs:
+        try:
+            await asyncio.to_thread(
+                webpush,
+                subscription_info={"endpoint": sub["endpoint"], "keys": {"p256dh": sub["p256dh"], "auth": sub["auth"]}},
+                data=payload,
+                vapid_private_key=VAPID_PRIVATE_KEY,
+                vapid_claims={"sub": f"mailto:{VAPID_EMAIL}"},
+            )
+            sent += 1
+            logger.info("[push/test] envoyée → %s…", sub["endpoint"][:50])
+        except WebPushException as e:
+            status = getattr(e.response, "status_code", None)
+            body = (e.response.text[:300] if e.response else str(e))
+            logger.warning("[push/test] WebPushException %s : %s", status, body)
+            errors.append(f"WebPush {status}: {body}")
+            if status in (404, 410):
+                await get_supabase().table("push_subscriptions").delete().eq("endpoint", sub["endpoint"]).execute()
+        except Exception as e:
+            logger.warning("[push/test] erreur : %s", e)
+            errors.append(str(e)[:300])
+
+    if sent == 0:
+        return {"ok": False, "error": " | ".join(errors) or "Envoi échoué sans détail"}
+    return {"ok": True, "sent": sent, "errors": errors}
 
 
 async def _send_push(user_id: str, title: str, body: str, url: str, tag: str) -> None:
