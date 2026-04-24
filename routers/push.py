@@ -60,6 +60,28 @@ async def unsubscribe(data: UnsubscribeIn, current_user: dict = Depends(get_curr
     return {"ok": True}
 
 
+@router.post("/test-sms")
+async def test_sms(current_user: dict = Depends(get_current_user)):
+    """Envoie un SMS de test au numéro du profil."""
+    result = await get_supabase_for_user(current_user["token"]) \
+        .table("profiles") \
+        .select("telephone, sms_notifications") \
+        .eq("id", current_user["id"]) \
+        .single() \
+        .execute()
+
+    profil = result.data or {}
+    if not profil.get("telephone"):
+        return {"ok": False, "error": "Aucun numéro de téléphone dans votre profil"}
+    if not profil.get("sms_notifications"):
+        return {"ok": False, "error": "Les SMS sont désactivés dans votre profil"}
+
+    ok = await envoyer_sms(profil["telephone"], "Test MyArtipro 📲\nLes notifications SMS fonctionnent !")
+    if ok:
+        return {"ok": True}
+    return {"ok": False, "error": "Envoi échoué — vérifiez les variables Twilio sur Railway"}
+
+
 @router.post("/test")
 async def test_push(current_user: dict = Depends(get_current_user)):
     """Envoie une notification push de test à tous les appareils enregistrés."""
