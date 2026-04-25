@@ -1,6 +1,7 @@
 import asyncio
 import uuid
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
+from pydantic import BaseModel
 from models.devis import DevisCreate, DevisUpdate
 from utils.supabase_client import get_supabase_for_user, get_supabase
 from utils.auth import get_current_user
@@ -8,6 +9,11 @@ from services.email_service import envoyer_devis_email
 from datetime import datetime, timezone
 
 router = APIRouter()
+
+
+class AccepterBody(BaseModel):
+    signature_data: str
+    signed_name: str
 
 
 async def _generer_numero(user_id: str, token: str) -> str:
@@ -169,7 +175,7 @@ async def get_devis_public(acceptance_token: str):
 
 
 @router.post("/public/{acceptance_token}/accepter")
-async def accepter_devis_public(acceptance_token: str):
+async def accepter_devis_public(acceptance_token: str, body: AccepterBody, request: Request):
     db = get_supabase()
     result = await db.table("devis").select("id, statut, numero, client_id, user_id, titre").eq("acceptance_token", acceptance_token).execute()
     if not result.data:
@@ -179,7 +185,21 @@ async def accepter_devis_public(acceptance_token: str):
         return {"message": "Devis déjà accepté"}
     if devis["statut"] == "refusé":
         raise HTTPException(status_code=400, detail="Ce devis a déjà été refusé")
-    await db.table("devis").update({"statut": "accepté", "date_acceptation": datetime.now(timezone.utc).isoformat()}).eq("acceptance_token", acceptance_token).execute()
+
+    now = datetime.now(timezone.utc).isoformat()
+    ip = request.client.host if request.client else "unknown"
+    ua = request.headers.get("user-agent", "")[:500]
+
+    await db.table("devis").update({
+        "statut": "accepté",
+        "date_acceptation": now,
+        "signature_data": body.signature_data,
+        "signed_at": now,
+        "signed_ip": ip,
+        "signed_name": body.signed_name,
+        "signed_user_agent": ua,
+    }).eq("acceptance_token", acceptance_token).execute()
+
     if devis.get("client_id"):
         await db.table("clients").update({"statut": "accepte"}).eq("id", devis["client_id"]).execute()
     if devis.get("user_id"):

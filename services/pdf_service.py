@@ -1,3 +1,4 @@
+import base64
 from fpdf import FPDF
 import os
 import tempfile
@@ -319,31 +320,110 @@ def generer_pdf_devis(devis: dict, client: dict, artisan: dict) -> bytes:
         pdf.cell(0, 5, _safe(devis["notes"]), new_x="LMARGIN", new_y="NEXT")
 
     # === MENTIONS DEVIS + ZONE SIGNATURE ===
-    # Obligatoire pour travaux > 150 EUR B2C (arrete du 2 mars 1990)
     pdf.ln(10)
     pdf.set_x(pdf.l_margin)
     pdf.set_font("Helvetica", "", 8)
     pdf.set_text_color(100, 100, 100)
-    pdf.multi_cell(
-        190, 4,
-        _safe("Devis valable 30 jours a compter de sa date d'emission. "
-              "Apres acceptation, merci de retourner ce devis signe avec la mention "
-              '"Bon pour accord" manuscrite.'),
-    )
-    pdf.set_x(pdf.l_margin)
-    pdf.ln(3)
 
-    # Zone signature (deux cadres cote a cote)
-    y_sign = pdf.get_y()
-    pdf.set_draw_color(200, 200, 200)
-    pdf.set_font("Helvetica", "", 8)
-    pdf.set_text_color(120, 120, 120)
-    pdf.rect(10, y_sign, 90, 22)
-    pdf.set_xy(12, y_sign + 2)
-    pdf.cell(86, 4, "Date :", new_x="LMARGIN", new_y="NEXT")
-    pdf.rect(110, y_sign, 90, 22)
-    pdf.set_xy(112, y_sign + 2)
-    pdf.cell(86, 4, _safe('Signature du client precedee de "Bon pour accord" :'), new_x="LMARGIN", new_y="NEXT")
+    signed_at = devis.get("signed_at")
+
+    if signed_at:
+        # --- Signature électronique effectuée ---
+        from datetime import datetime as _dt
+        try:
+            dt = _dt.fromisoformat(signed_at.replace("Z", "+00:00"))
+            date_sign_str = dt.strftime("%d/%m/%Y a %H:%M") + " UTC"
+        except Exception:
+            date_sign_str = signed_at[:16]
+
+        pdf.multi_cell(
+            190, 4,
+            _safe("Devis valable 30 jours a compter de sa date d'emission. "
+                  "Ce devis a ete accepte par signature electronique simple (SES)."),
+        )
+        pdf.set_x(pdf.l_margin)
+        pdf.ln(3)
+
+        y_sign = pdf.get_y()
+        pdf.set_draw_color(34, 197, 94)   # green-500
+        pdf.set_fill_color(240, 253, 244)  # green-50
+        pdf.set_line_width(0.4)
+
+        # Cadre gauche : piste d'audit
+        pdf.rect(10, y_sign, 90, 30, style="DF")
+        pdf.set_xy(12, y_sign + 3)
+        pdf.set_font("Helvetica", "B", 7)
+        pdf.set_text_color(21, 128, 61)
+        pdf.cell(86, 4, "Signe electroniquement", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_x(12)
+        pdf.set_font("Helvetica", "", 7)
+        pdf.set_text_color(30, 30, 30)
+        pdf.cell(86, 4, _safe(f"Le : {date_sign_str}"), new_x="LMARGIN", new_y="NEXT")
+        pdf.set_x(12)
+        pdf.cell(86, 4, _safe(f"Par : {devis.get('signed_name', '')}"), new_x="LMARGIN", new_y="NEXT")
+        pdf.set_x(12)
+        pdf.set_font("Helvetica", "", 6)
+        pdf.set_text_color(100, 100, 100)
+        pdf.cell(86, 4, _safe(f"IP : {devis.get('signed_ip', '')}"), new_x="LMARGIN", new_y="NEXT")
+
+        # Cadre droit : image signature
+        pdf.set_draw_color(34, 197, 94)
+        pdf.set_fill_color(255, 255, 255)
+        pdf.rect(110, y_sign, 90, 30, style="DF")
+        raw = devis.get("signature_data", "")
+        if raw:
+            try:
+                if "," in raw:
+                    raw = raw.split(",", 1)[1]
+                img_bytes = base64.b64decode(raw)
+                tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+                tmp.write(img_bytes)
+                tmp.close()
+                pdf.image(tmp.name, x=113, y=y_sign + 2, w=84, h=26)
+                os.unlink(tmp.name)
+            except Exception:
+                pass
+
+        pdf.set_line_width(0.2)
+        pdf.set_y(y_sign + 34)
+
+        # Ligne légale eIDAS
+        pdf.ln(2)
+        pdf.set_x(pdf.l_margin)
+        pdf.set_font("Helvetica", "", 6)
+        pdf.set_text_color(150, 150, 150)
+        pdf.multi_cell(
+            190, 3,
+            _safe(
+                f"Signature electronique simple (SES) conforme au reglement eIDAS (UE) n 910/2014, art. 3(10). "
+                f"Signataire : {devis.get('signed_name', '')} | "
+                f"Ref : {devis.get('numero', '')} | "
+                f"IP : {devis.get('signed_ip', '')} | "
+                f"Horodatage : {date_sign_str}"
+            ),
+        )
+    else:
+        # --- Pas encore signé : zone vierge ---
+        # Obligatoire pour travaux > 150 EUR B2C (arrete du 2 mars 1990)
+        pdf.multi_cell(
+            190, 4,
+            _safe("Devis valable 30 jours a compter de sa date d'emission. "
+                  "Apres acceptation, merci de retourner ce devis signe avec la mention "
+                  '"Bon pour accord" manuscrite.'),
+        )
+        pdf.set_x(pdf.l_margin)
+        pdf.ln(3)
+
+        y_sign = pdf.get_y()
+        pdf.set_draw_color(200, 200, 200)
+        pdf.set_font("Helvetica", "", 8)
+        pdf.set_text_color(120, 120, 120)
+        pdf.rect(10, y_sign, 90, 22)
+        pdf.set_xy(12, y_sign + 2)
+        pdf.cell(86, 4, "Date :", new_x="LMARGIN", new_y="NEXT")
+        pdf.rect(110, y_sign, 90, 22)
+        pdf.set_xy(112, y_sign + 2)
+        pdf.cell(86, 4, _safe('Signature du client precedee de "Bon pour accord" :'), new_x="LMARGIN", new_y="NEXT")
 
     return pdf.output()
 

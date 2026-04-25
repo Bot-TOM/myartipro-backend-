@@ -102,20 +102,14 @@ async def export_factures_csv(
     annee: Optional[int] = Query(None, ge=2020, le=2100),
 ):
     db = get_supabase_for_user(current_user["token"])
-    query = db.table("factures").select("*, clients(nom, prenom)").eq("user_id", current_user["id"]).is_("deleted_at", "null")
-
-    if mois and annee:
-        # Filtrage sur la date de création du mois demandé
-        debut = f"{annee}-{mois:02d}-01"
-        # Dernier jour du mois suivant (exclusive)
-        if mois == 12:
-            fin = f"{annee + 1}-01-01"
-        else:
-            fin = f"{annee}-{mois + 1:02d}-01"
-        query = query.filter("date_creation", "gte", debut).filter("date_creation", "lt", fin)
-
-    result = await query.order("date_creation", desc=False).execute()
+    result = await db.table("factures").select("*, clients(nom, prenom)").eq("user_id", current_user["id"]).is_("deleted_at", "null").order("date_creation", desc=False).execute()
     factures = result.data or []
+
+    # Filtrage par mois/année côté Python (compatible toutes versions supabase-py)
+    if mois and annee:
+        debut = f"{annee}-{mois:02d}-01"
+        fin = f"{annee + 1}-01-01" if mois == 12 else f"{annee}-{mois + 1:02d}-01"
+        factures = [f for f in factures if debut <= (f.get("date_creation") or "")[:10] < fin]
 
     output = io.StringIO()
     writer = csv.writer(output, delimiter=';', quoting=csv.QUOTE_MINIMAL)

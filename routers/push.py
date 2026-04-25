@@ -17,16 +17,22 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 def _load_vapid_key(raw: str) -> str:
-    """Accepte PEM direct, PEM avec \\n littéraux, ou PEM encodé en base64."""
+    """Accepte : base64url brut (43 chars), PEM direct, ou PEM encodé en base64."""
     raw = raw.strip()
     if not raw:
         return ""
+    # PEM direct (avec \n réels ou littéraux)
     if raw.startswith("-----"):
         return raw.replace("\\n", "\n")
+    # PEM encodé en base64 standard
     try:
-        return base64.b64decode(raw).decode()
+        decoded = base64.b64decode(raw + "==").decode("ascii")
+        if decoded.startswith("-----"):
+            return decoded.replace("\\n", "\n")
     except Exception:
-        return raw
+        pass
+    # base64url brut (format natif py_vapid) — retourner tel quel
+    return raw
 
 
 VAPID_PRIVATE_KEY = _load_vapid_key(os.getenv("VAPID_PRIVATE_KEY", ""))
