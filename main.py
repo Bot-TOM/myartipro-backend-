@@ -87,6 +87,20 @@ async def root():
     return {"message": "MyArtipro API is running"}
 
 
+@app.post("/admin/relances/devis", tags=["Admin"])
+async def trigger_relances_devis():
+    """Déclenche manuellement la relance devis (test/debug)."""
+    await relancer_devis_sans_reponse()
+    return {"message": "Relances devis exécutées"}
+
+
+@app.post("/admin/relances/factures", tags=["Admin"])
+async def trigger_relances_factures():
+    """Déclenche manuellement la relance factures (test/debug)."""
+    await relancer_factures_impayees()
+    return {"message": "Relances factures exécutées"}
+
+
 @app.get("/health")
 async def health():
     checks = {

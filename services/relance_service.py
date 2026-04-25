@@ -23,8 +23,8 @@ async def relancer_devis_sans_reponse():
 
     result = await (
         db.table("devis")
-        .select("id, numero, titre, user_id, date_envoi, clients(nom, prenom, email)")
-        .eq("statut", "envoyé")
+        .select("id, numero, titre, user_id, date_envoi, acceptance_token, clients(nom, prenom, email)")
+        .in_("statut", ["envoyé", "consulté"])
         .lt("date_envoi", seuil)
         .execute()
     )
@@ -58,6 +58,8 @@ async def relancer_devis_sans_reponse():
                 artisan_nom=artisan_nom,
                 devis_numero=devis["numero"],
                 jours_depuis_envoi=jours,
+                acceptance_token=devis.get("acceptance_token") or "",
+                devis_id=devis["id"],
                 artisan_email=artisan.get("email") or "",
                 artisan_telephone=artisan.get("telephone") or "",
             )

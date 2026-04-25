@@ -116,11 +116,27 @@ def envoyer_relance_email(
     artisan_nom: str,
     devis_numero: str,
     jours_depuis_envoi: int,
+    acceptance_token: str = "",
+    devis_id: str = "",
     artisan_email: str = "",
     artisan_telephone: str = "",
 ):
     """Envoie un email de relance pour un devis sans reponse."""
     _init_resend()
+    app_url = os.getenv("APP_URL", "http://localhost:5173")
+    api_url = os.getenv("API_URL", "http://localhost:8000")
+    pdf_link = f"{api_url}/pdf/public/devis/{devis_id}" if devis_id else ""
+    devis_link = f"{app_url}/devis/public/{acceptance_token}" if acceptance_token else pdf_link
+    bouton = (
+        f"""<p style="margin:24px 0">
+        <a href="{devis_link}"
+           style="background:#2563eb;color:#fff;padding:12px 28px;
+                  text-decoration:none;border-radius:6px;font-weight:bold">
+            Voir le devis
+        </a>
+    </p>"""
+        if devis_link else ""
+    )
     signature = _signature_html(artisan_nom, artisan_email, artisan_telephone)
 
     try:
@@ -135,6 +151,7 @@ def envoyer_relance_email(
     <p>Nous nous permettons de revenir vers vous concernant le devis
     <strong>{devis_numero}</strong> envoye il y a {jours_depuis_envoi} jours
     par {artisan_nom}.</p>
+    {bouton}
     <p>Si vous avez des questions ou souhaitez y donner suite,
     n'hesitez pas a nous contacter.</p>
     {signature}
