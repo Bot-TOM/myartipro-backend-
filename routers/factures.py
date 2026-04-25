@@ -34,8 +34,8 @@ async def creer_facture_depuis_devis(devis_id: str, current_user: dict = Depends
     devis = (await db.table("devis").select("*").eq("id", devis_id).eq("user_id", current_user["id"]).single().execute()).data
     if not devis:
         raise HTTPException(status_code=404, detail="Devis non trouvé")
-    if devis["statut"] not in ("accepté", "envoyé", "relancé"):
-        raise HTTPException(status_code=400, detail="Le devis doit être envoyé, relancé ou accepté")
+    if devis["statut"] not in ("accepté", "envoyé", "relancé", "consulté"):
+        raise HTTPException(status_code=400, detail="Le devis doit être accepté, envoyé ou relancé")
     existing = (await db.table("factures").select("id").eq("devis_id", devis_id).execute()).data
     if existing:
         raise HTTPException(status_code=400, detail="Ce devis a déjà été converti en facture")
