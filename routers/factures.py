@@ -95,6 +95,15 @@ async def delete_facture(facture_id: str, current_user: dict = Depends(get_curre
     return {"message": "Facture archivée"}
 
 
+_MOIS_FR = ["", "Janvier", "Fevrier", "Mars", "Avril", "Mai", "Juin",
+            "Juillet", "Aout", "Septembre", "Octobre", "Novembre", "Decembre"]
+
+_MODE_LABELS = {
+    "especes": "Especes", "cheque": "Cheque",
+    "virement": "Virement bancaire", "carte": "Carte bancaire", "stripe": "Paiement en ligne",
+}
+
+
 @router.get("/export/csv")
 async def export_factures_csv(
     current_user: dict = Depends(get_current_user),
@@ -102,8 +111,13 @@ async def export_factures_csv(
     annee: Optional[int] = Query(None, ge=2020, le=2100),
 ):
     db = get_supabase_for_user(current_user["token"])
-    result = await db.table("factures").select("*, clients(nom, prenom)").eq("user_id", current_user["id"]).is_("deleted_at", "null").order("date_creation", desc=False).execute()
-    factures = result.data or []
+
+    factures_res, artisan_res = await asyncio.gather(
+        db.table("factures").select("*, clients(nom, prenom)").eq("user_id", current_user["id"]).is_("deleted_at", "null").order("date_creation", desc=False).execute(),
+        db.table("profiles").select("*").eq("id", current_user["id"]).single().execute(),
+    )
+    factures = factures_res.data or []
+    artisan = artisan_res.data or {}
 
     if mois and annee:
         debut = f"{annee}-{mois:02d}-01"
@@ -111,56 +125,97 @@ async def export_factures_csv(
         factures = [f for f in factures if debut <= (f.get("date_creation") or "")[:10] < fin]
 
     output = io.StringIO()
-    writer = csv.writer(output, delimiter=';', quoting=csv.QUOTE_MINIMAL)
+    w = csv.writer(output, delimiter=';', quoting=csv.QUOTE_ALL)
 
-    writer.writerow([
-        'Numero', 'Client', 'Titre',
-        'Date creation', 'Date echeance', 'Date paiement',
-        'Montant HT (EUR)', 'TVA (%)', 'Montant TTC (EUR)',
-        'Statut', 'Mode paiement', 'Notes',
-    ])
+    def row(*cols): w.writerow(cols)
+    def empty(): w.writerow([])
+    def section(title): w.writerow([]); w.writerow([f"=== {title} ==="]); w.writerow([])
 
-    total_ht = 0.0
-    total_ttc = 0.0
-    nb_payees = 0
+    # ── IDENTIFICATION ──────────────────────────────────────────────────────
+    nom = artisan.get("entreprise") or f"{artisan.get('prenom', '')} {artisan.get('nom', '')}".strip()
+    periode = f"{_MOIS_FR[mois]} {annee}" if (mois and annee) else "Toutes periodes"
+
+    row("BILAN COMPTABLE MENSUEL")
+    empty()
+    row("Entreprise", nom)
+    if artisan.get("siret"):   row("SIRET", artisan["siret"])
+    if artisan.get("adresse"): row("Adresse", artisan["adresse"])
+    if artisan.get("email"):   row("Email", artisan["email"])
+    row("Periode", periode)
+    row("Genere le", datetime.now().strftime("%d/%m/%Y a %H:%M"))
+
+    # ── JOURNAL DES FACTURES ────────────────────────────────────────────────
+    section("JOURNAL DES FACTURES")
+    row("N Facture", "Date emission", "Client", "Objet",
+        "HT (EUR)", "TVA (%)", "TVA (EUR)", "TTC (EUR)",
+        "Statut", "Mode reglement", "Date encaissement", "Notes")
+
+    total_ht = total_tva = total_ttc = encaisse = impaye = 0.0
+    nb_payees = nb_emises = 0
 
     for f in factures:
-        client_nom = f"{f['clients'].get('prenom', '')} {f['clients'].get('nom', '')}".strip() if f.get('clients') else ''
-        ht = float(f.get('montant_ht') or 0)
-        ttc = float(f.get('montant_ttc') or 0)
-        total_ht += ht
-        total_ttc += ttc
-        if f.get('statut') == 'payée':
-            nb_payees += 1
-        writer.writerow([
-            f.get('numero', ''),
-            client_nom,
-            f.get('titre', ''),
-            (f.get('date_creation') or '')[:10],
-            (f.get('date_echeance') or '')[:10],
-            (f.get('date_paiement') or '')[:10],
-            f"{ht:.2f}",
-            f.get('tva', ''),
-            f"{ttc:.2f}",
-            f.get('statut', ''),
-            f.get('mode_paiement', ''),
-            f.get('notes', ''),
-        ])
+        client_nom = (f"{f['clients'].get('prenom', '')} {f['clients'].get('nom', '')}".strip()
+                      if f.get("clients") else "")
+        ht  = float(f.get("montant_ht") or 0)
+        ttc = float(f.get("montant_ttc") or 0)
+        tva_eur = ttc - ht
+        total_ht += ht; total_tva += tva_eur; total_ttc += ttc
+        statut = f.get("statut", "")
+        if statut == "payée":   encaisse += ttc; nb_payees += 1
+        elif statut == "émise": impaye   += ttc; nb_emises += 1
+        row(f.get("numero", ""), (f.get("date_creation") or "")[:10], client_nom,
+            f.get("titre", ""), f"{ht:.2f}", f"{float(f.get('tva') or 0):.0f}%",
+            f"{tva_eur:.2f}", f"{ttc:.2f}", statut,
+            _MODE_LABELS.get(f.get("mode_paiement") or "", ""),
+            (f.get("date_paiement") or "")[:10], f.get("notes") or "")
 
-    writer.writerow([])
-    writer.writerow([
-        f"TOTAL ({len(factures)} facture{'s' if len(factures) > 1 else ''}, {nb_payees} payee{'s' if nb_payees > 1 else ''})",
-        '', '', '', '', '',
-        f"{total_ht:.2f}", '',
-        f"{total_ttc:.2f}",
-        '', '', '',
-    ])
+    # ── SYNTHESE ────────────────────────────────────────────────────────────
+    section("SYNTHESE")
+    row("Chiffre d affaires HT",  f"{total_ht:.2f} EUR")
+    row("TVA collectee",          f"{total_tva:.2f} EUR")
+    row("Chiffre d affaires TTC", f"{total_ttc:.2f} EUR")
+    empty()
+    row("Dont encaisse (TTC)",    f"{encaisse:.2f} EUR")
+    row("Dont impaye (TTC)",      f"{impaye:.2f} EUR")
+    empty()
+    row("Nombre de factures", len(factures))
+    row("Dont payees",        nb_payees)
+    row("Dont en attente",    nb_emises)
+    empty()
+    regime = artisan.get("regime_tva", "franchise")
+    if regime == "franchise":
+        row("Regime TVA", "Franchise en base - art. 293 B CGI - TVA non applicable")
+    else:
+        row("Regime TVA", "Regime reel - TVA collectee a declarer")
+    if artisan.get("numero_tva"):
+        row("N TVA intracommunautaire", artisan["numero_tva"])
+
+    # ── ENCAISSEMENTS DU MOIS ───────────────────────────────────────────────
+    payees = sorted(
+        [f for f in factures if f.get("statut") == "payée"],
+        key=lambda f: f.get("date_paiement") or "",
+    )
+    if payees:
+        section("ENCAISSEMENTS DU MOIS — LIVRE DES RECETTES (art. 50-0 CGI)")
+        row("N Facture", "Date encaissement", "Client", "Objet", "TTC (EUR)", "Mode reglement")
+        total_enc = 0.0
+        for f in payees:
+            client_nom = (f"{f['clients'].get('prenom', '')} {f['clients'].get('nom', '')}".strip()
+                          if f.get("clients") else "")
+            ttc = float(f.get("montant_ttc") or 0)
+            total_enc += ttc
+            row(f.get("numero", ""), (f.get("date_paiement") or "")[:10], client_nom,
+                f.get("titre", ""), f"{ttc:.2f}",
+                _MODE_LABELS.get(f.get("mode_paiement") or "", ""))
+        empty()
+        row("TOTAL ENCAISSEMENTS", f"{total_enc:.2f} EUR")
 
     content = '\ufeff' + output.getvalue()
-    filename = f"factures_{annee}-{mois:02d}.csv" if (mois and annee) else f"factures_export_{datetime.now().strftime('%Y%m%d')}.csv"
+    filename = (f"bilan_{annee}-{mois:02d}.csv" if (mois and annee)
+                else f"bilan_{datetime.now().strftime('%Y%m%d')}.csv")
 
     return StreamingResponse(
-        iter([content.encode('utf-8')]),
+        iter([content.encode("utf-8")]),
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
