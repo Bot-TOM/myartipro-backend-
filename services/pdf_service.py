@@ -655,3 +655,121 @@ def generer_pdf_facture(facture: dict, client: dict, artisan: dict) -> bytes:
         pdf.set_line_width(0.2)
 
     return pdf.output()
+
+
+_MODE_LABELS = {
+    "especes": "Especes",
+    "cheque": "Cheque",
+    "virement": "Virement",
+    "carte": "Carte bancaire",
+    "stripe": "Paiement en ligne",
+}
+
+
+def generer_livre_recettes(factures: list, artisan: dict, mois: int, annee: int) -> bytes:
+    """
+    Livre des recettes conforme CGI art. 50-0 (BIC / micro-entrepreneur).
+    Contient uniquement les factures payees, triees par date d'encaissement.
+    """
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=25)
+    pdf.add_page()
+
+    # === EN-TETE ARTISAN ===
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.set_text_color(37, 99, 235)
+    pdf.cell(0, 9, "LIVRE DES RECETTES", new_x="LMARGIN", new_y="NEXT")
+
+    pdf.set_font("Helvetica", "", 9)
+    pdf.set_text_color(100, 100, 100)
+    nom = artisan.get("entreprise") or f"{artisan.get('prenom', '')} {artisan.get('nom', '')}".strip()
+    MOIS_FR = ["", "Janvier", "Fevrier", "Mars", "Avril", "Mai", "Juin",
+               "Juillet", "Aout", "Septembre", "Octobre", "Novembre", "Decembre"]
+    pdf.cell(0, 5, _safe(f"Periode : {MOIS_FR[mois]} {annee}"), new_x="LMARGIN", new_y="NEXT")
+
+    pdf.ln(3)
+    pdf.set_fill_color(248, 250, 252)
+    pdf.set_draw_color(226, 232, 240)
+    pdf.rect(10, pdf.get_y(), 190, 22, style="DF")
+    pdf.set_xy(14, pdf.get_y() + 3)
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.set_text_color(30, 30, 30)
+    pdf.cell(0, 5, _safe(nom), new_x="LMARGIN", new_y="NEXT")
+    pdf.set_x(14)
+    pdf.set_font("Helvetica", "", 8)
+    pdf.set_text_color(80, 80, 80)
+    infos = []
+    if artisan.get("siret"):
+        infos.append(f"SIRET : {artisan['siret']}")
+    if artisan.get("adresse"):
+        infos.append(artisan["adresse"])
+    if artisan.get("email"):
+        infos.append(artisan["email"])
+    if infos:
+        pdf.cell(0, 4, _safe(" | ".join(infos)), new_x="LMARGIN", new_y="NEXT")
+    pdf.set_y(pdf.get_y() + 8)
+
+    # === TABLEAU ===
+    COL = [28, 28, 40, 44, 30, 22]  # Date | N° Facture | Client | Objet | Mode | TTC
+    HEADERS = ["Dt encaissement", "N Facture", "Client", "Objet / prestation", "Mode reglement", "TTC (EUR)"]
+
+    pdf.set_fill_color(37, 99, 235)
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font("Helvetica", "B", 7)
+    for i, h in enumerate(HEADERS):
+        align = "R" if i == 5 else "L"
+        pdf.cell(COL[i], 7, h, border=0, fill=True, align=align)
+    pdf.ln()
+
+    total_ttc = 0.0
+    row_count = 0
+
+    for f in factures:
+        dp = (f.get("date_paiement") or "")[:10]
+        client = f.get("clients") or {}
+        client_nom = f"{client.get('prenom', '')} {client.get('nom', '')}".strip()
+        mode_raw = f.get("mode_paiement") or ""
+        mode_label = _MODE_LABELS.get(mode_raw, mode_raw.capitalize() if mode_raw else "-")
+        ttc = float(f.get("montant_ttc") or 0)
+        total_ttc += ttc
+
+        fill = row_count % 2 == 1
+        if fill:
+            pdf.set_fill_color(248, 250, 252)
+        pdf.set_text_color(50, 50, 50)
+        pdf.set_font("Helvetica", "", 8)
+
+        pdf.cell(COL[0], 7, _safe(dp), border=0, fill=fill)
+        pdf.cell(COL[1], 7, _safe(f.get("numero", "")), border=0, fill=fill)
+        pdf.cell(COL[2], 7, _safe(client_nom[:22]), border=0, fill=fill)
+        pdf.cell(COL[3], 7, _safe((f.get("titre") or "")[:28]), border=0, fill=fill)
+        pdf.cell(COL[4], 7, _safe(mode_label), border=0, fill=fill)
+        pdf.cell(COL[5], 7, f"{ttc:.2f}", border=0, fill=fill, align="R")
+        pdf.ln()
+        row_count += 1
+
+    # === TOTAL ===
+    pdf.set_draw_color(37, 99, 235)
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+    pdf.ln(2)
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.set_text_color(37, 99, 235)
+    label_w = sum(COL[:5])
+    pdf.cell(label_w, 7, _safe(f"TOTAL RECETTES — {row_count} facture{'s' if row_count > 1 else ''}"), align="L")
+    pdf.cell(COL[5], 7, f"{total_ttc:.2f}", align="R", new_x="LMARGIN", new_y="NEXT")
+
+    # === MENTION LEGALE ===
+    pdf.ln(8)
+    pdf.set_font("Helvetica", "", 7)
+    pdf.set_text_color(150, 150, 150)
+    pdf.set_x(pdf.l_margin)
+    pdf.multi_cell(
+        190, 3.5,
+        _safe(
+            "Livre des recettes tenu conformement a l'article 50-0 du Code general des impots (CGI), "
+            "applicable aux micro-entreprises relevant du regime des BIC. "
+            "Document genere par MyArtipro — myartipro.fr"
+        ),
+    )
+
+    return pdf.output()

@@ -105,7 +105,6 @@ async def export_factures_csv(
     result = await db.table("factures").select("*, clients(nom, prenom)").eq("user_id", current_user["id"]).is_("deleted_at", "null").order("date_creation", desc=False).execute()
     factures = result.data or []
 
-    # Filtrage par mois/année côté Python (compatible toutes versions supabase-py)
     if mois and annee:
         debut = f"{annee}-{mois:02d}-01"
         fin = f"{annee + 1}-01-01" if mois == 12 else f"{annee}-{mois + 1:02d}-01"
@@ -118,7 +117,7 @@ async def export_factures_csv(
         'Numero', 'Client', 'Titre',
         'Date creation', 'Date echeance', 'Date paiement',
         'Montant HT (EUR)', 'TVA (%)', 'Montant TTC (EUR)',
-        'Statut', 'Notes',
+        'Statut', 'Mode paiement', 'Notes',
     ])
 
     total_ht = 0.0
@@ -144,30 +143,54 @@ async def export_factures_csv(
             f.get('tva', ''),
             f"{ttc:.2f}",
             f.get('statut', ''),
+            f.get('mode_paiement', ''),
             f.get('notes', ''),
         ])
 
-    # Ligne de totaux
     writer.writerow([])
     writer.writerow([
         f"TOTAL ({len(factures)} facture{'s' if len(factures) > 1 else ''}, {nb_payees} payee{'s' if nb_payees > 1 else ''})",
-        '', '',  '', '', '',
-        f"{total_ht:.2f}",
-        '',
+        '', '', '', '', '',
+        f"{total_ht:.2f}", '',
         f"{total_ttc:.2f}",
-        '', '',
+        '', '', '',
     ])
 
-    # UTF-8 BOM pour compatibilité Excel
     content = '\ufeff' + output.getvalue()
-
-    if mois and annee:
-        filename = f"factures_{annee}-{mois:02d}.csv"
-    else:
-        filename = f"factures_export_{datetime.now().strftime('%Y%m%d')}.csv"
+    filename = f"factures_{annee}-{mois:02d}.csv" if (mois and annee) else f"factures_export_{datetime.now().strftime('%Y%m%d')}.csv"
 
     return StreamingResponse(
         iter([content.encode('utf-8')]),
         media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/export/pdf")
+async def export_livre_recettes_pdf(
+    current_user: dict = Depends(get_current_user),
+    mois: int = Query(..., ge=1, le=12),
+    annee: int = Query(..., ge=2020, le=2100),
+):
+    from services.pdf_service import generer_livre_recettes
+
+    db = get_supabase_for_user(current_user["token"])
+    result = await db.table("factures").select("*, clients(nom, prenom)").eq("user_id", current_user["id"]).eq("statut", "payée").is_("deleted_at", "null").order("date_paiement", desc=False).execute()
+    factures = result.data or []
+
+    debut = f"{annee}-{mois:02d}-01"
+    fin = f"{annee + 1}-01-01" if mois == 12 else f"{annee}-{mois + 1:02d}-01"
+    factures = [f for f in factures if debut <= (f.get("date_paiement") or "")[:10] < fin]
+
+    artisan_res = await db.table("profiles").select("*").eq("id", current_user["id"]).single().execute()
+    artisan = artisan_res.data or {}
+
+    pdf_bytes = bytes(generer_livre_recettes(factures, artisan, mois, annee))
+    filename = f"livre_recettes_{annee}-{mois:02d}.pdf"
+
+    from fastapi.responses import Response
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

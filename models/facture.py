@@ -8,6 +8,7 @@ class FactureUpdate(BaseModel):
     statut: Optional[str] = None
     date_echeance: Optional[str] = None
     date_paiement: Optional[str] = None
+    mode_paiement: Optional[str] = None
     notes: Optional[str] = None
 
 

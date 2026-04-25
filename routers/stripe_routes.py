@@ -55,6 +55,7 @@ async def stripe_webhook(request: Request):
             result = await db.table("factures").update({
                 "statut": "payée",
                 "date_paiement": datetime.now(timezone.utc).isoformat(),
+                "mode_paiement": "stripe",
             }).eq("id", facture_id).execute()
             logger.info("[stripe webhook] facture %s marquée payée", facture_id)
             if result.data:
