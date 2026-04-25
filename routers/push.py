@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 import logging
 import os
@@ -15,8 +16,20 @@ from utils.supabase_client import get_supabase, get_supabase_for_user
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# Railway stocke parfois les clés multilignes avec des \n littéraux
-VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY", "").replace("\\n", "\n")
+def _load_vapid_key(raw: str) -> str:
+    """Accepte PEM direct, PEM avec \\n littéraux, ou PEM encodé en base64."""
+    raw = raw.strip()
+    if not raw:
+        return ""
+    if raw.startswith("-----"):
+        return raw.replace("\\n", "\n")
+    try:
+        return base64.b64decode(raw).decode()
+    except Exception:
+        return raw
+
+
+VAPID_PRIVATE_KEY = _load_vapid_key(os.getenv("VAPID_PRIVATE_KEY", ""))
 VAPID_EMAIL = os.getenv("VAPID_CLAIM_EMAIL", "contact@myartipro.fr")
 
 
