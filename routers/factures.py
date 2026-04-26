@@ -1,7 +1,7 @@
 import asyncio
 import csv
 import io
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from models.facture import FactureUpdate
 from utils.supabase_client import get_supabase_for_user, get_supabase
@@ -29,8 +29,44 @@ async def list_factures(current_user: dict = Depends(get_current_user)):
     return result.data
 
 
+async def _envoyer_email_facture_bg(
+    facture_id: str,
+    facture_numero: str,
+    montant_ttc: float,
+    client_id: str,
+    user_id: str,
+) -> None:
+    """Envoi email facture en arrière-plan — ne bloque pas la réponse HTTP."""
+    try:
+        db = get_supabase()
+        client = (await db.table("clients").select("email, nom, prenom").eq("id", client_id).single().execute()).data
+        profile = (await db.table("profiles").select("nom, prenom, entreprise, email, telephone").eq("id", user_id).single().execute()).data
+        if not client or not client.get("email") or not profile:
+            return
+        artisan_nom = (profile.get("entreprise") or f"{profile.get('prenom', '')} {profile.get('nom', '')}".strip()) or "Votre artisan"
+        client_nom  = f"{client.get('prenom', '')} {client.get('nom', '')}".strip() or "Client"
+        # Resend est synchrone — on l'exécute dans un thread pour ne pas bloquer l'event loop
+        await asyncio.to_thread(
+            envoyer_facture_email,
+            client_email=client["email"],
+            client_nom=client_nom,
+            artisan_nom=artisan_nom,
+            facture_numero=facture_numero,
+            facture_id=facture_id,
+            montant_ttc=montant_ttc,
+            artisan_email=profile.get("email") or "",
+            artisan_telephone=profile.get("telephone") or "",
+        )
+    except Exception as e:
+        print(f"[Email] Avertissement envoi facture : {e}")
+
+
 @router.post("/depuis-devis/{devis_id}", status_code=201)
-async def creer_facture_depuis_devis(devis_id: str, current_user: dict = Depends(get_current_user)):
+async def creer_facture_depuis_devis(
+    devis_id: str,
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(get_current_user),
+):
     db = get_supabase_for_user(current_user["token"])
     devis = (await db.table("devis").select("*").eq("id", devis_id).eq("user_id", current_user["id"]).single().execute()).data
     if not devis:
@@ -40,6 +76,7 @@ async def creer_facture_depuis_devis(devis_id: str, current_user: dict = Depends
     existing = (await db.table("factures").select("id").eq("devis_id", devis_id).execute()).data
     if existing:
         raise HTTPException(status_code=400, detail="Ce devis a déjà été converti en facture")
+
     numero = await _generer_numero_facture(current_user["id"], current_user["token"])
     result = await db.table("factures").insert({
         "user_id": current_user["id"], "client_id": devis["client_id"], "devis_id": devis_id,
@@ -50,29 +87,20 @@ async def creer_facture_depuis_devis(devis_id: str, current_user: dict = Depends
     }).execute()
     if not result.data:
         raise HTTPException(status_code=500, detail="Erreur lors de la création de la facture")
+
     await db.table("devis").update({"statut": "facturé"}).eq("id", devis_id).execute()
 
     facture = result.data[0]
 
-    # Envoi email au client (silencieux si pas d'email ou erreur)
-    try:
-        client = (await get_supabase().table("clients").select("email, nom, prenom").eq("id", devis["client_id"]).single().execute()).data
-        profile = (await get_supabase().table("profiles").select("nom, prenom, entreprise, email, telephone").eq("id", current_user["id"]).single().execute()).data
-        if client and client.get("email") and profile:
-            artisan_nom = (profile.get("entreprise") or f"{profile.get('prenom', '')} {profile.get('nom', '')}".strip()) or "Votre artisan"
-            client_nom  = f"{client.get('prenom', '')} {client.get('nom', '')}".strip() or "Client"
-            envoyer_facture_email(
-                client_email=client["email"],
-                client_nom=client_nom,
-                artisan_nom=artisan_nom,
-                facture_numero=facture["numero"],
-                facture_id=facture["id"],
-                montant_ttc=float(facture["montant_ttc"]),
-                artisan_email=profile.get("email") or "",
-                artisan_telephone=profile.get("telephone") or "",
-            )
-    except Exception as e:
-        print(f"[Email] Avertissement envoi facture : {e}")
+    # Email envoyé en arrière-plan : la réponse HTTP n'attend pas l'envoi Resend
+    background_tasks.add_task(
+        _envoyer_email_facture_bg,
+        facture_id=facture["id"],
+        facture_numero=facture["numero"],
+        montant_ttc=float(facture["montant_ttc"]),
+        client_id=devis["client_id"],
+        user_id=current_user["id"],
+    )
 
     return facture
 
