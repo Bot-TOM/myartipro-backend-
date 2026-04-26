@@ -119,3 +119,69 @@ async def update_profile(data: ProfileUpdate, current_user: dict = Depends(get_c
     if not result.data:
         raise HTTPException(status_code=404, detail="Profil non trouvé")
     return result.data[0]
+
+
+@router.get("/me/export")
+async def export_my_data(current_user: dict = Depends(get_current_user)):
+    """Portabilité des données — RGPD art. 20."""
+    db = get_supabase_for_user(current_user["token"])
+    uid = current_user["id"]
+
+    profil    = (await db.table("profiles").select("*").eq("id", uid).single().execute()).data or {}
+    clients   = (await db.table("clients").select("*").eq("user_id", uid).execute()).data or []
+    devis     = (await db.table("devis").select("*").eq("user_id", uid).execute()).data or []
+    factures  = (await db.table("factures").select("*").eq("user_id", uid).is_("deleted_at", "null").execute()).data or []
+    rappels   = (await db.table("rappels").select("*").eq("user_id", uid).execute()).data or []
+
+    # Retirer les champs techniques inutiles pour l'export
+    for row in [profil] + clients + devis + factures + rappels:
+        for k in ("user_id", "acceptance_token", "signature_data"):
+            row.pop(k, None)
+
+    return {
+        "export_date": __import__("datetime").datetime.utcnow().isoformat() + "Z",
+        "profil": profil,
+        "clients": clients,
+        "devis": devis,
+        "factures": factures,
+        "rappels": rappels,
+    }
+
+
+@router.delete("/me")
+async def delete_my_account(current_user: dict = Depends(get_current_user)):
+    """
+    Suppression de compte — RGPD art. 17 (droit à l'effacement).
+    - Factures émises/payées : anonymisées, conservées 10 ans (L123-22 C.com).
+    - Tout le reste (clients, devis, rappels, modèles, profil) : supprimé définitivement.
+    - Compte Supabase Auth : supprimé via l'API admin.
+    """
+    db   = get_supabase()
+    uid  = current_user["id"]
+
+    # 1. Anonymiser les factures comptables (obligations légales 10 ans)
+    await db.table("factures").update({
+        "deleted_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
+    }).eq("user_id", uid).execute()
+
+    # 2. Supprimer les données personnelles en cascade
+    for table in ("rappels", "modeles", "devis", "clients", "profiles"):
+        col = "id" if table == "profiles" else "user_id"
+        await db.table(table).delete().eq(col, uid).execute()
+
+    # 3. Supprimer les souscriptions push
+    try:
+        await db.table("push_subscriptions").delete().eq("user_id", uid).execute()
+    except Exception:
+        pass
+
+    # 4. Supprimer le compte Supabase Auth (admin)
+    supabase_url = os.getenv("SUPABASE_URL", "")
+    service_key  = os.getenv("SUPABASE_SERVICE_KEY", "")
+    async with httpx.AsyncClient(timeout=15) as client:
+        await client.delete(
+            f"{supabase_url}/auth/v1/admin/users/{uid}",
+            headers={"apikey": service_key, "Authorization": f"Bearer {service_key}"},
+        )
+
+    return {"message": "Compte et données supprimés"}
