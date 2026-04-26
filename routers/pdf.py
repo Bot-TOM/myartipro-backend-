@@ -46,6 +46,34 @@ async def public_devis_pdf(devis_id: str):
                     headers={"Content-Disposition": f'attachment; filename="{devis.get("numero", "devis")}.pdf"'})
 
 
+@router.get("/public/facture/{facture_id}")
+async def public_facture_pdf(facture_id: str):
+    """Endpoint sans authentification — accessible depuis un lien email client."""
+    from services.pdf_service import generer_pdf_facture
+    db = get_supabase()
+    try:
+        result = await db.table("factures").select("*, clients(nom, prenom, email, telephone, adresse)").eq("id", facture_id).execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur DB facture: {str(e)}")
+
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Facture non trouvée")
+
+    facture = result.data[0]
+    if facture.get("statut") not in ("émise", "payée"):
+        raise HTTPException(status_code=403, detail="Cette facture n'est pas accessible")
+
+    artisan = await _get_artisan(db, facture["user_id"])
+    try:
+        pdf_bytes = bytes(generer_pdf_facture(facture, facture.get("clients") or {}, artisan))
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Erreur génération PDF: {str(e)}")
+
+    return Response(content=pdf_bytes, media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="{facture.get("numero", "facture")}.pdf"'})
+
+
 @router.get("/facture/{facture_id}")
 async def download_facture_pdf(facture_id: str, current_user: dict = Depends(get_current_user)):
     from services.pdf_service import generer_pdf_facture

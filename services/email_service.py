@@ -123,7 +123,7 @@ def envoyer_facture_email(
     """Envoie la facture au client lors de sa création (conversion depuis devis)."""
     _init_resend()
     api_url = os.getenv("API_URL", "http://localhost:8000")
-    pdf_link = f"{api_url}/pdf/facture/{facture_id}"
+    pdf_link = f"{api_url}/pdf/public/facture/{facture_id}"
     signature = _signature_html(artisan_nom, artisan_email, artisan_telephone)
     montant_str = f"{montant_ttc:,.2f} €".replace(",", " ").replace(".", ",")
 

@@ -165,12 +165,13 @@ async def get_devis_public(acceptance_token: str):
     if devis["statut"] in ("envoyé", "relancé"):
         await db.table("devis").update({"statut": "consulté"}).eq("acceptance_token", acceptance_token).execute()
         devis["statut"] = "consulté"
-    profile = await db.table("profiles").select("stripe_enabled, moyens_paiement, instructions_paiement, entreprise, prenom, nom").eq("id", devis["user_id"]).single().execute()
+    profile = await db.table("profiles").select("stripe_enabled, moyens_paiement, instructions_paiement, entreprise, prenom, nom, regime_tva").eq("id", devis["user_id"]).single().execute()
     devis["artisan_paiement"] = {
         "stripe_enabled": profile.data.get("stripe_enabled", False) if profile.data else False,
         "moyens_paiement": profile.data.get("moyens_paiement") or [] if profile.data else [],
         "instructions_paiement": profile.data.get("instructions_paiement") or "" if profile.data else "",
         "artisan_nom": (profile.data.get("entreprise") or f"{profile.data.get('prenom', '')} {profile.data.get('nom', '')}".strip()) if profile.data else "",
+        "is_franchise": (profile.data.get("regime_tva") != "reel") if profile.data else True,
     }
     return devis
 
