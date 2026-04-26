@@ -8,7 +8,7 @@ from utils.supabase_client import get_supabase_for_user, get_supabase
 from utils.auth import get_current_user
 from datetime import datetime, timezone
 from typing import Optional
-from services.email_service import envoyer_facture_email
+from services.email_service import envoyer_facture_email, envoyer_relance_facture_email
 
 router = APIRouter()
 
@@ -93,6 +93,72 @@ async def update_facture(facture_id: str, data: FactureUpdate, current_user: dic
     if not result.data:
         raise HTTPException(status_code=404, detail="Facture non trouvée")
     return result.data[0]
+
+
+@router.post("/{facture_id}/relancer")
+async def relancer_facture(facture_id: str, current_user: dict = Depends(get_current_user)):
+    """
+    Relance manuelle d'une facture impayée.
+    Paliers : 1 = rappel cordial · 2 = rappel ferme · 3 = mise en demeure (art. L441-10).
+    Maximum 3 relances par facture.
+    """
+    db = get_supabase_for_user(current_user["token"])
+    facture = (
+        await db.table("factures")
+        .select("*, clients(email, nom, prenom)")
+        .eq("id", facture_id)
+        .eq("user_id", current_user["id"])
+        .is_("deleted_at", "null")
+        .single()
+        .execute()
+    ).data
+    if not facture:
+        raise HTTPException(status_code=404, detail="Facture non trouvée")
+    if facture["statut"] != "émise":
+        raise HTTPException(status_code=400, detail="Seules les factures émises peuvent être relancées")
+    client = facture.get("clients")
+    if not client or not client.get("email"):
+        raise HTTPException(status_code=400, detail="Le client n'a pas d'adresse email")
+
+    relances_count = int(facture.get("relances_count") or 0)
+    if relances_count >= 3:
+        raise HTTPException(status_code=400, detail="Nombre maximum de relances atteint (3)")
+
+    palier = relances_count + 1
+    date_creation = datetime.fromisoformat(facture["date_creation"].replace("Z", "+00:00"))
+    jours = (datetime.now(timezone.utc) - date_creation).days
+
+    artisan = (
+        await db.table("profiles")
+        .select("nom, prenom, entreprise, email, telephone")
+        .eq("id", current_user["id"])
+        .single()
+        .execute()
+    ).data
+    artisan_nom = (artisan.get("entreprise") or f"{artisan.get('prenom', '')} {artisan.get('nom', '')}".strip()) if artisan else ""
+
+    try:
+        envoyer_relance_facture_email(
+            client_email=client["email"],
+            client_nom=f"{client.get('prenom', '')} {client['nom']}".strip(),
+            artisan_nom=artisan_nom,
+            facture_numero=facture["numero"],
+            montant_ttc=float(facture.get("montant_ttc") or 0),
+            jours_depuis_emission=jours,
+            palier=palier,
+            lien_paiement=facture.get("stripe_checkout_url") or "",
+            artisan_email=artisan.get("email") or "" if artisan else "",
+            artisan_telephone=artisan.get("telephone") or "" if artisan else "",
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur envoi email : {str(e)}")
+
+    await db.table("factures").update({
+        "relances_count": palier,
+        "derniere_relance_at": datetime.now(timezone.utc).isoformat(),
+    }).eq("id", facture_id).execute()
+
+    return {"message": f"Facture {facture['numero']} relancée (palier {palier})", "palier": palier}
 
 
 @router.delete("/{facture_id}")

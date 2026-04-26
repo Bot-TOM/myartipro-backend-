@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from models.devis import DevisCreate, DevisUpdate
 from utils.supabase_client import get_supabase_for_user, get_supabase
 from utils.auth import get_current_user
-from services.email_service import envoyer_devis_email
+from services.email_service import envoyer_devis_email, envoyer_relance_email
 from datetime import datetime, timezone
 
 router = APIRouter()
@@ -229,6 +229,62 @@ async def refuser_devis_public(acceptance_token: str):
     if devis.get("client_id"):
         await db.table("clients").update({"statut": "a_rappeler"}).eq("id", devis["client_id"]).execute()
     return {"message": f"Devis {devis['numero']} refusé"}
+
+
+@router.post("/{devis_id}/relancer")
+async def relancer_devis(devis_id: str, current_user: dict = Depends(get_current_user)):
+    """Relance manuelle d'un devis : envoie l'email de relance et met à jour le statut."""
+    db = get_supabase_for_user(current_user["token"])
+    devis = (
+        await db.table("devis")
+        .select("*, clients(email, nom, prenom)")
+        .eq("id", devis_id)
+        .eq("user_id", current_user["id"])
+        .single()
+        .execute()
+    ).data
+    if not devis:
+        raise HTTPException(status_code=404, detail="Devis non trouvé")
+    if devis["statut"] not in ("envoyé", "consulté", "relancé"):
+        raise HTTPException(status_code=400, detail="Ce devis ne peut pas être relancé")
+    client = devis.get("clients")
+    if not client or not client.get("email"):
+        raise HTTPException(status_code=400, detail="Le client n'a pas d'adresse email")
+
+    artisan = (
+        await db.table("profiles")
+        .select("nom, prenom, entreprise, email, telephone")
+        .eq("id", current_user["id"])
+        .single()
+        .execute()
+    ).data
+    artisan_nom = (artisan.get("entreprise") or f"{artisan.get('prenom', '')} {artisan.get('nom', '')}".strip()) if artisan else ""
+
+    date_ref = devis.get("date_envoi") or datetime.now(timezone.utc).isoformat()
+    date_ref_dt = datetime.fromisoformat(date_ref.replace("Z", "+00:00"))
+    jours = (datetime.now(timezone.utc) - date_ref_dt).days
+
+    try:
+        envoyer_relance_email(
+            client_email=client["email"],
+            client_nom=f"{client.get('prenom', '')} {client['nom']}".strip(),
+            artisan_nom=artisan_nom,
+            devis_numero=devis["numero"],
+            jours_depuis_envoi=jours,
+            acceptance_token=devis.get("acceptance_token") or "",
+            devis_id=devis_id,
+            artisan_email=artisan.get("email") or "" if artisan else "",
+            artisan_telephone=artisan.get("telephone") or "" if artisan else "",
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur envoi email : {str(e)}")
+
+    await db.table("devis").update({
+        "statut": "relancé",
+        "date_relance": datetime.now(timezone.utc).isoformat(),
+    }).eq("id", devis_id).execute()
+
+    return {"message": f"Devis {devis['numero']} relancé avec succès"}
 
 
 @router.post("/relances/executer")

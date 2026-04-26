@@ -15,7 +15,7 @@ env_path = Path(__file__).resolve().parent / ".env"
 load_dotenv(env_path)
 
 from routers import auth, clients, devis, pdf, factures, stripe_routes, rappels, modeles, push
-from services.relance_service import relancer_devis_sans_reponse, relancer_factures_impayees
+from services.relance_service import relancer_devis_sans_reponse, relancer_factures_impayees, notifier_rappels_du_jour
 
 scheduler = AsyncIOScheduler(timezone="Europe/Paris")
 
@@ -23,6 +23,13 @@ scheduler = AsyncIOScheduler(timezone="Europe/Paris")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
+        scheduler.add_job(
+            notifier_rappels_du_jour,
+            CronTrigger(hour=8, minute=50),
+            id="notif_rappels",
+            replace_existing=True,
+            misfire_grace_time=3600,
+        )
         scheduler.add_job(
             relancer_devis_sans_reponse,
             CronTrigger(hour=9, minute=0),
@@ -38,7 +45,7 @@ async def lifespan(app: FastAPI):
             misfire_grace_time=3600,
         )
         scheduler.start()
-        print("[scheduler] démarré — devis 09:00 + factures 09:15 Europe/Paris")
+        print("[scheduler] démarré — rappels 08:50 + devis 09:00 + factures 09:15 Europe/Paris")
     except Exception as e:
         print(f"[scheduler] erreur démarrage: {e}")
     try:

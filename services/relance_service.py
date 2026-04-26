@@ -1,4 +1,4 @@
-"""Services de relance automatique : devis sans réponse + factures impayées."""
+"""Services de relance automatique : devis sans réponse + factures impayées + rappels push."""
 
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -155,3 +155,73 @@ async def relancer_factures_impayees():
             print(f"[RelanceFacture] {f['numero']} → erreur: {e}")
 
     print(f"[RelanceFacture] Terminé — {relancees} relances envoyées")
+
+
+async def notifier_rappels_du_jour() -> None:
+    """
+    Envoi quotidien à 8h50 : push + SMS résumant les rappels du jour
+    et les rappels en retard, par utilisateur.
+    Un seul message groupé par artisan pour éviter le spam.
+    """
+    # Import local pour éviter la dépendance circulaire au chargement du module.
+    from routers.push import notify_user
+
+    print(f"[RappelsNotif] Démarrage — {datetime.now()}")
+    db = get_supabase()
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    result = await (
+        db.table("rappels")
+        .select("user_id, date_rappel, commentaire, clients(nom, prenom)")
+        .eq("fait", False)
+        .lte("date_rappel", today)
+        .execute()
+    )
+    rappels = result.data or []
+
+    if not rappels:
+        print("[RappelsNotif] Aucun rappel à notifier")
+        return
+
+    # Grouper par user_id
+    by_user: dict[str, list] = {}
+    for r in rappels:
+        by_user.setdefault(r["user_id"], []).append(r)
+
+    notified = 0
+    for user_id, user_rappels in by_user.items():
+        today_list  = [r for r in user_rappels if r["date_rappel"] == today]
+        late_list   = [r for r in user_rappels if r["date_rappel"] < today]
+        today_count = len(today_list)
+        late_count  = len(late_list)
+
+        parts: list[str] = []
+        if today_count:
+            parts.append(f"{today_count} rappel{'s' if today_count > 1 else ''} aujourd'hui")
+        if late_count:
+            parts.append(f"{late_count} en retard")
+        body = " · ".join(parts)
+
+        # Aperçu du premier rappel du jour (ou en retard)
+        premier = (today_list or late_list)[0]
+        apercu = premier["commentaire"][:60]
+        if len(premier["commentaire"]) > 60:
+            apercu += "…"
+        if premier.get("clients"):
+            c = premier["clients"]
+            apercu += f" — {c.get('prenom', '')} {c.get('nom', '')}".strip()
+
+        try:
+            await notify_user(
+                user_id=user_id,
+                title=f"📋 {body}",
+                body=apercu,
+                url="/rappels",
+                tag="rappels-quotidien",
+            )
+            notified += 1
+            print(f"[RappelsNotif] Notifié user {user_id} ({today_count} aujourd'hui, {late_count} en retard)")
+        except Exception as e:
+            print(f"[RappelsNotif] Erreur user {user_id} : {e}")
+
+    print(f"[RappelsNotif] Terminé — {notified} utilisateur(s) notifié(s)")
