@@ -4,10 +4,11 @@ import io
 from fastapi import APIRouter, HTTPException, Depends, Query
 from fastapi.responses import StreamingResponse
 from models.facture import FactureUpdate
-from utils.supabase_client import get_supabase_for_user
+from utils.supabase_client import get_supabase_for_user, get_supabase
 from utils.auth import get_current_user
 from datetime import datetime, timezone
 from typing import Optional
+from services.email_service import envoyer_facture_email
 
 router = APIRouter()
 
@@ -49,7 +50,30 @@ async def creer_facture_depuis_devis(devis_id: str, current_user: dict = Depends
     if not result.data:
         raise HTTPException(status_code=500, detail="Erreur lors de la création de la facture")
     await db.table("devis").update({"statut": "facturé"}).eq("id", devis_id).execute()
-    return result.data[0]
+
+    facture = result.data[0]
+
+    # Envoi email au client (silencieux si pas d'email ou erreur)
+    try:
+        client = (await get_supabase().table("clients").select("email, nom, prenom").eq("id", devis["client_id"]).single().execute()).data
+        profile = (await get_supabase().table("profiles").select("nom, prenom, entreprise, email, telephone").eq("id", current_user["id"]).single().execute()).data
+        if client and client.get("email") and profile:
+            artisan_nom = (profile.get("entreprise") or f"{profile.get('prenom', '')} {profile.get('nom', '')}".strip()) or "Votre artisan"
+            client_nom  = f"{client.get('prenom', '')} {client.get('nom', '')}".strip() or "Client"
+            envoyer_facture_email(
+                client_email=client["email"],
+                client_nom=client_nom,
+                artisan_nom=artisan_nom,
+                facture_numero=facture["numero"],
+                facture_id=facture["id"],
+                montant_ttc=float(facture["montant_ttc"]),
+                artisan_email=profile.get("email") or "",
+                artisan_telephone=profile.get("telephone") or "",
+            )
+    except Exception as e:
+        print(f"[Email] Avertissement envoi facture : {e}")
+
+    return facture
 
 
 @router.get("/{facture_id}")

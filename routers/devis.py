@@ -157,7 +157,7 @@ async def envoyer_devis(devis_id: str, current_user: dict = Depends(get_current_
 @router.get("/public/{acceptance_token}")
 async def get_devis_public(acceptance_token: str):
     db = get_supabase()
-    result = await db.table("devis").select("id, numero, titre, prestations, montant_ht, tva, montant_ttc, statut, date_creation, date_validite, notes, user_id, clients(nom, prenom, adresse)").eq("acceptance_token", acceptance_token).execute()
+    result = await db.table("devis").select("id, numero, titre, prestations, montant_ht, tva, montant_ttc, acompte_pct, statut, date_creation, date_validite, notes, user_id, clients(nom, prenom, adresse)").eq("acceptance_token", acceptance_token).execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="Devis introuvable ou lien invalide")
     devis = result.data[0]

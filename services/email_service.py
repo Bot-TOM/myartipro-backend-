@@ -110,6 +110,57 @@ def envoyer_devis_email(
         raise Exception(f"Echec envoi email: {str(e)}")
 
 
+def envoyer_facture_email(
+    client_email: str,
+    client_nom: str,
+    artisan_nom: str,
+    facture_numero: str,
+    facture_id: str,
+    montant_ttc: float,
+    artisan_email: str = "",
+    artisan_telephone: str = "",
+):
+    """Envoie la facture au client lors de sa création (conversion depuis devis)."""
+    _init_resend()
+    api_url = os.getenv("API_URL", "http://localhost:8000")
+    pdf_link = f"{api_url}/pdf/facture/{facture_id}"
+    signature = _signature_html(artisan_nom, artisan_email, artisan_telephone)
+    montant_str = f"{montant_ttc:,.2f} €".replace(",", " ").replace(".", ",")
+
+    try:
+        result = _send(
+            {
+                "from": _from_with_artisan(artisan_nom),
+                "to": client_email,
+                "subject": f"Facture {facture_numero} — {artisan_nom}",
+                "html": f"""
+<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px">
+    <h2 style="color:#2563eb">Bonjour {client_nom},</h2>
+    <p>Veuillez trouver ci-joint votre facture <strong>{facture_numero}</strong>
+       d'un montant de <strong>{montant_str}</strong>.</p>
+    <p style="margin:24px 0">
+        <a href="{pdf_link}"
+           style="background:#2563eb;color:#fff;padding:12px 28px;
+                  text-decoration:none;border-radius:6px;font-weight:bold">
+            Telecharger la facture PDF
+        </a>
+    </p>
+    <p>N'hesitez pas a repondre a cet email pour toute question.</p>
+    {signature}
+    <hr style="border:none;border-top:1px solid #eee;margin:24px 0">
+    <p style="font-size:12px;color:#999">Envoye via MyArtipro</p>
+</div>
+            """,
+            },
+            reply_to=artisan_email,
+        )
+        print(f"[Email] Facture {facture_numero} envoyee a {client_email} — ID: {result}")
+        return result
+    except Exception as e:
+        print(f"[Email] ERREUR envoi facture {facture_numero} a {client_email}: {e}")
+        raise Exception(f"Echec envoi email: {str(e)}")
+
+
 def envoyer_relance_email(
     client_email: str,
     client_nom: str,
