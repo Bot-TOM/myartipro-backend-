@@ -45,7 +45,8 @@ async def creer_facture_depuis_devis(devis_id: str, current_user: dict = Depends
         "user_id": current_user["id"], "client_id": devis["client_id"], "devis_id": devis_id,
         "numero": numero, "titre": devis["titre"], "prestations": devis["prestations"],
         "montant_ht": float(devis["montant_ht"]), "tva": float(devis["tva"]),
-        "montant_ttc": float(devis["montant_ttc"]), "notes": devis.get("notes"), "date_echeance": None,
+        "montant_ttc": float(devis["montant_ttc"]), "acompte_pct": int(devis.get("acompte_pct") or 0),
+        "notes": devis.get("notes"), "date_echeance": None,
     }).execute()
     if not result.data:
         raise HTTPException(status_code=500, detail="Erreur lors de la création de la facture")

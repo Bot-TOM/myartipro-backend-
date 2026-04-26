@@ -552,10 +552,11 @@ def generer_pdf_facture(facture: dict, client: dict, artisan: dict) -> bytes:
     pdf.ln(5)
 
     # === TOTAUX ===
-    montant_ht = float(facture.get("montant_ht", 0))
-    tva_pct = float(facture.get("tva", 20))
+    montant_ht  = float(facture.get("montant_ht", 0))
+    tva_pct     = float(facture.get("tva", 20))
     montant_ttc = float(facture.get("montant_ttc", 0))
     montant_tva = montant_ttc - montant_ht
+    acompte_pct = int(facture.get("acompte_pct") or 0)
 
     x_label = 130
 
@@ -565,9 +566,17 @@ def generer_pdf_facture(facture: dict, client: dict, artisan: dict) -> bytes:
     pdf.cell(40, 6, "Total HT", align="L")
     pdf.cell(20, 6, f"{montant_ht:.2f} EUR", align="R", new_x="LMARGIN", new_y="NEXT")
 
-    pdf.set_x(x_label)
-    pdf.cell(40, 6, f"TVA ({tva_pct:.0f}%)", align="L")
-    pdf.cell(20, 6, f"{montant_tva:.2f} EUR", align="R", new_x="LMARGIN", new_y="NEXT")
+    if tva_pct == 0:
+        pdf.set_x(x_label)
+        pdf.set_font("Helvetica", "I", 8)
+        pdf.set_text_color(180, 120, 0)
+        pdf.cell(60, 6, "TVA non applicable — franchise en base (art. 293 B CGI)", align="L", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_font("Helvetica", "", 9)
+        pdf.set_text_color(100, 100, 100)
+    else:
+        pdf.set_x(x_label)
+        pdf.cell(40, 6, f"TVA ({tva_pct:.0f}%)", align="L")
+        pdf.cell(20, 6, f"{montant_tva:.2f} EUR", align="R", new_x="LMARGIN", new_y="NEXT")
 
     pdf.set_draw_color(37, 99, 235)
     pdf.line(x_label, pdf.get_y(), x_label + 60, pdf.get_y())
@@ -576,8 +585,35 @@ def generer_pdf_facture(facture: dict, client: dict, artisan: dict) -> bytes:
     pdf.set_font("Helvetica", "B", 13)
     pdf.set_text_color(37, 99, 235)
     pdf.set_x(x_label)
-    pdf.cell(40, 8, "Total TTC", align="L")
+    label_total = "Total HT" if tva_pct == 0 else "Total TTC"
+    pdf.cell(40, 8, label_total, align="L")
     pdf.cell(20, 8, f"{montant_ttc:.2f} EUR", align="R", new_x="LMARGIN", new_y="NEXT")
+
+    # === ACOMPTE / NET A PAYER ===
+    if acompte_pct > 0:
+        acompte_ttc = montant_ttc * acompte_pct / 100
+        net_a_payer = montant_ttc - acompte_ttc
+
+        pdf.ln(2)
+        pdf.set_draw_color(200, 200, 200)
+        pdf.line(x_label, pdf.get_y(), x_label + 60, pdf.get_y())
+        pdf.ln(2)
+
+        pdf.set_font("Helvetica", "", 9)
+        pdf.set_text_color(100, 100, 100)
+        pdf.set_x(x_label)
+        pdf.cell(40, 6, _safe(f"Acompte verse ({acompte_pct}%)"), align="L")
+        pdf.cell(20, 6, f"-{acompte_ttc:.2f} EUR", align="R", new_x="LMARGIN", new_y="NEXT")
+
+        pdf.set_draw_color(37, 99, 235)
+        pdf.line(x_label, pdf.get_y(), x_label + 60, pdf.get_y())
+        pdf.ln(2)
+
+        pdf.set_font("Helvetica", "B", 12)
+        pdf.set_text_color(30, 30, 30)
+        pdf.set_x(x_label)
+        pdf.cell(40, 8, "Net a payer", align="L")
+        pdf.cell(20, 8, f"{net_a_payer:.2f} EUR", align="R", new_x="LMARGIN", new_y="NEXT")
 
     # === NOTES ===
     if facture.get("notes"):
