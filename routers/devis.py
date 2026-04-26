@@ -47,8 +47,9 @@ async def create_devis(data: DevisCreate, current_user: dict = Depends(get_curre
     result = await db.table("devis").insert({
         "user_id": current_user["id"], "client_id": data.client_id, "numero": numero,
         "titre": data.titre, "prestations": prestations, "montant_ht": montant_ht,
-        "tva": data.tva, "montant_ttc": montant_ttc, "notes": data.notes,
-        "date_validite": data.date_validite, "urgence": data.urgence or "normal", "charge": data.charge,
+        "tva": data.tva, "montant_ttc": montant_ttc, "acompte_pct": data.acompte_pct,
+        "notes": data.notes, "date_validite": data.date_validite,
+        "urgence": data.urgence or "normal", "charge": data.charge,
     }).execute()
     if not result.data:
         raise HTTPException(status_code=500, detail="Erreur lors de la création")
