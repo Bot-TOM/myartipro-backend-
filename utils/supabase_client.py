@@ -67,6 +67,11 @@ class TableQuery:
         self._params[column] = f"like.{pattern.replace('%', '*')}"
         return self
 
+    def in_(self, column: str, values: list) -> "TableQuery":
+        joined = ",".join(f'"{v}"' if isinstance(v, str) else str(v) for v in values)
+        self._params[column] = f"in.({joined})"
+        return self
+
     def lt(self, column: str, value) -> "TableQuery":
         self._params[column] = f"lt.{value}"
         return self
