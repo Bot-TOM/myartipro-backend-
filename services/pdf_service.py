@@ -265,9 +265,17 @@ def generer_pdf_devis(devis: dict, client: dict, artisan: dict) -> bytes:
     pdf.cell(40, 6, "Total HT", align="L")
     pdf.cell(20, 6, f"{montant_ht:.2f} EUR", align="R", new_x="LMARGIN", new_y="NEXT")
 
-    pdf.set_x(x_label)
-    pdf.cell(40, 6, f"TVA ({tva_pct:.0f}%)", align="L")
-    pdf.cell(20, 6, f"{montant_tva:.2f} EUR", align="R", new_x="LMARGIN", new_y="NEXT")
+    if tva_pct == 0:
+        pdf.set_x(x_label)
+        pdf.set_font("Helvetica", "I", 8)
+        pdf.set_text_color(180, 120, 0)
+        pdf.cell(60, 6, "TVA non applicable — franchise en base (art. 293 B CGI)", align="L", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_font("Helvetica", "", 9)
+        pdf.set_text_color(100, 100, 100)
+    else:
+        pdf.set_x(x_label)
+        pdf.cell(40, 6, f"TVA ({tva_pct:.0f}%)", align="L")
+        pdf.cell(20, 6, f"{montant_tva:.2f} EUR", align="R", new_x="LMARGIN", new_y="NEXT")
 
     # Ligne
     pdf.set_draw_color(37, 99, 235)
